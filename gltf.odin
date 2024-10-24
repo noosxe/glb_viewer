@@ -77,7 +77,9 @@ glTF_Accessor :: struct {
 	min:           union {
 		[]f64,
 	},
-	sparse:        glTF_Accessor_Sparse,
+	sparse:        union {
+		glTF_Accessor_Sparse,
+	},
 }
 
 // complete
