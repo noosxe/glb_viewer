@@ -37,14 +37,14 @@ main :: proc() {
 	defer os.close(file)
 	log.debugf("file open")
 
-	read_counter: int
+	read_counter: u32
 	header := Header{}
 	{
 		read, err := os.read_ptr(file, &header, size_of(Header))
 		if err != nil {
 			log.fatal("fail", err)
 		}
-		read_counter += read
+		read_counter += u32(read)
 
 		if header.magic != VALID_MAGIC {
 			log.fatal("invalid magic")
@@ -55,22 +55,22 @@ main :: proc() {
 		log.debugf("total length: %d bytes", header.length)
 	}
 
-	{
+	for read_counter < header.length {
 		log.debug("reading chunk")
 
-		os.seek(file, (i64)(read_counter), os.SEEK_SET)
+		os.seek(file, i64(read_counter), os.SEEK_SET)
 
 		chunkHeader := ChunkHeader{}
 		read, err := os.read_ptr(file, &chunkHeader, size_of(ChunkHeader))
 		if err != nil {
 			log.fatal("fail", err)
 		}
-		read_counter += read
+		read_counter += u32(read)
 
 		log.debugf("chunk data length: %d bytes", chunkHeader.chunkLength)
 		log.debugf("chunk type: %X", chunkHeader.chunkType)
 
-		os.seek(file, (i64)(read_counter), os.SEEK_SET)
+		os.seek(file, i64(read_counter), os.SEEK_SET)
 
 		switch chunkHeader.chunkType {
 		case CHUNK_JSON:
@@ -78,11 +78,11 @@ main :: proc() {
 
 			data := make([]byte, chunkHeader.chunkLength)
 			defer delete(data)
-			read, err := os.read_at_least(file, data, (int)(chunkHeader.chunkLength))
+			read, err := os.read_at_least(file, data, int(chunkHeader.chunkLength))
 			if err != nil {
 				log.fatal("fail", err)
 			}
-			read_counter += read
+			read_counter += u32(read)
 			data = data[:read]
 
 			log.debug("JSON chunk read")
@@ -107,9 +107,12 @@ main :: proc() {
 		// fmt.println(root)
 		case CHUNK_BIN:
 			log.debug("this is a binary chunk")
+			read_counter += chunkHeader.chunkLength
 		case:
 			log.debug("this is an unknown chunk")
-			read_counter += (int)(chunkHeader.chunkLength)
+			read_counter += chunkHeader.chunkLength
 		}
 	}
+
+	log.debug("all done")
 }
