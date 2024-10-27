@@ -1,4 +1,4 @@
-package glb_viewer
+package gltf
 
 import "core:encoding/json"
 import "core:fmt"
@@ -11,6 +11,17 @@ VALID_MAGIC :: 0x46546C67
 CHUNK_JSON :: 0x4E4F534A
 CHUNK_BIN :: 0x004E4942
 
+glTF_Error :: enum {
+	None,
+	Invalid_Magic,
+	Unknown_First_Chunk,
+}
+Error :: union #shared_nil {
+	os.Error,
+	json.Unmarshal_Error,
+	glTF_Error,
+}
+
 Header :: struct {
 	magic:   u32,
 	version: u32,
@@ -22,32 +33,26 @@ ChunkHeader :: struct {
 	chunkType:   u32,
 }
 
-main :: proc() {
-	context.logger = log.create_console_logger(.Debug)
+Glb_Container :: struct {
+	file:       os.Handle,
+	gltf:       ^glTF_Document,
+	gltf_arena: vmem.Arena,
+}
 
-	path := "./train.glb"
-
-	log.debugf("trying to open file: %s", path)
-	file, err := os.open(path)
-	if err != nil {
-		log.fatalf("failed to open the file %v", err)
-		return
-	}
-
-	defer os.close(file)
-	log.debugf("file open")
+glb_load :: proc(path: string) -> (container: ^Glb_Container, err: Error) {
+	container = new(Glb_Container)
+	file := os.open(path) or_return
+	container.file = file
 
 	read_counter: u32
 	header := Header{}
 	{
-		read, err := os.read_ptr(file, &header, size_of(Header))
-		if err != nil {
-			log.fatal("fail", err)
-		}
+		read := os.read_ptr(file, &header, size_of(Header)) or_return
 		read_counter += u32(read)
 
 		if header.magic != VALID_MAGIC {
-			log.fatal("invalid magic")
+			log.debug("invalid magic")
+			return container, .Invalid_Magic
 		}
 
 		log.debug("glTF magic valid")
@@ -55,16 +60,13 @@ main :: proc() {
 		log.debugf("total length: %d bytes", header.length)
 	}
 
-	for read_counter < header.length {
-		log.debug("reading chunk")
+	log.debug("reading chunk")
 
+	{
 		os.seek(file, i64(read_counter), os.SEEK_SET)
 
 		chunkHeader := ChunkHeader{}
-		read, err := os.read_ptr(file, &chunkHeader, size_of(ChunkHeader))
-		if err != nil {
-			log.fatal("fail", err)
-		}
+		read := os.read_ptr(file, &chunkHeader, size_of(ChunkHeader)) or_return
 		read_counter += u32(read)
 
 		log.debugf("chunk data length: %d bytes", chunkHeader.chunkLength)
@@ -80,7 +82,7 @@ main :: proc() {
 			defer delete(data)
 			read, err := os.read_at_least(file, data, int(chunkHeader.chunkLength))
 			if err != nil {
-				log.fatal("fail", err)
+				log.debug("fail", err)
 			}
 			read_counter += u32(read)
 			data = data[:read]
@@ -88,31 +90,24 @@ main :: proc() {
 			log.debug("JSON chunk read")
 			log.debug("parsing JSON chunk")
 
-			gltf := glTF{}
+			gltf_arena: vmem.Arena
+			arena_allocator := vmem.arena_allocator(&gltf_arena)
+			container.gltf = new(glTF_Document)
+			json.unmarshal(data, container.gltf, allocator = arena_allocator) or_return
+			container.gltf_arena = gltf_arena
 
-			uerr := json.unmarshal(data, &gltf)
-			if uerr != nil {
-				log.fatal("failed to unmarshall", uerr)
-			}
-
-			fmt.println(gltf)
-
-		// json_data, json_err := json.parse(data)
-		// if json_err != .None {
-		// 	log.fatal("failed to parse JSON", json_err)
-		// }
-		// defer json.destroy_value(json_data)
-
-		// root := json_data.(json.Object)
-		// fmt.println(root)
-		case CHUNK_BIN:
-			log.debug("this is a binary chunk")
-			read_counter += chunkHeader.chunkLength
+			log.debug("all done")
+			return container, nil
 		case:
 			log.debug("this is an unknown chunk")
-			read_counter += chunkHeader.chunkLength
+			return container, .Unknown_First_Chunk
 		}
 	}
+}
 
-	log.debug("all done")
+glb_destroy :: proc(container: ^Glb_Container) {
+	vmem.arena_destroy(&container.gltf_arena)
+	os.close(container.file)
+	free(container.gltf)
+	free(container)
 }

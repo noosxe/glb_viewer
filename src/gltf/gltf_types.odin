@@ -1,14 +1,14 @@
-package glb_viewer
+package gltf
 
 glTF_Id :: int
 
-// extensionsa - any object?
-// extras      - anything, maybe key-value pairs?
+// extensions - any object?
+// extras - anything, maybe key-value pairs?
 glTF_Property :: struct {}
 
 glTF_Child_Of_Root_Property :: struct {
-	_:    glTF_Property,
-	name: union {
+	using _: glTF_Property,
+	name:    union {
 		string,
 	},
 }
@@ -31,7 +31,7 @@ glTF_Indices_Component_Type :: enum int {
 
 // complete
 glTF_Accessor_Sparse_Indices :: struct {
-	_:             glTF_Property,
+	using _:       glTF_Property,
 	bufferView:    glTF_Id,
 	byteOffset:    union {
 		int,
@@ -41,7 +41,7 @@ glTF_Accessor_Sparse_Indices :: struct {
 
 // complete
 glTF_Accessor_Sparse_Values :: struct {
-	_:          glTF_Property,
+	using _:    glTF_Property,
 	bufferView: glTF_Id,
 	byteOffset: union {
 		int,
@@ -50,15 +50,23 @@ glTF_Accessor_Sparse_Values :: struct {
 
 // complete
 glTF_Accessor_Sparse :: struct {
-	_:       glTF_Property,
+	using _: glTF_Property,
 	count:   int,
 	indices: glTF_Accessor_Sparse_Indices,
 	values:  glTF_Accessor_Sparse_Values,
 }
 
+ACCESSOR_TYPE_SCALAR :: "SCALAR"
+ACCESSOR_TYPE_VEC2 :: "VEC2"
+ACCESSOR_TYPE_VEC3 :: "VEC3"
+ACCESSOR_TYPE_VEC4 :: "VEC4"
+ACCESSOR_TYPE_MAT2 :: "MAT2"
+ACCESSOR_TYPE_MAT3 :: "MAT3"
+ACCESSOR_TYPE_MAT4 :: "MAT4"
+
 // complete
 glTF_Accessor :: struct {
-	_:             glTF_Child_Of_Root_Property,
+	using _:       glTF_Child_Of_Root_Property,
 	bufferView:    union {
 		glTF_Id,
 	},
@@ -84,23 +92,23 @@ glTF_Accessor :: struct {
 
 // complete
 glTF_Animation_Channel_Target :: struct {
-	_:    glTF_Property,
-	node: union {
+	using _: glTF_Property,
+	node:    union {
 		glTF_Id,
 	},
-	path: string, // translation, rotation, scale, weights
+	path:    string, // translation, rotation, scale, weights
 }
 
 // complete
 glTF_Animation_Channel :: struct {
-	_:       glTF_Property,
+	using _: glTF_Property,
 	sampler: glTF_Id,
 	target:  glTF_Animation_Channel_Target,
 }
 
 // complete
 glTF_Animation_Sampler :: struct {
-	_:             glTF_Property,
+	using _:       glTF_Property,
 	input:         glTF_Id,
 	interpolation: union {
 		string, // LINEAR, STEP, CUBICSPLINE
@@ -110,14 +118,14 @@ glTF_Animation_Sampler :: struct {
 
 // complete
 glTF_Animation :: struct {
-	_:        glTF_Child_Of_Root_Property,
+	using _:  glTF_Child_Of_Root_Property,
 	channels: []glTF_Animation_Channel,
 	samplers: []glTF_Animation_Sampler,
 }
 
 // complete
 glTF_Asset :: struct {
-	_:          glTF_Property,
+	using _:    glTF_Property,
 	copyright:  union {
 		string,
 	},
@@ -132,7 +140,7 @@ glTF_Asset :: struct {
 
 // complete
 glTF_Buffer :: struct {
-	_:          glTF_Child_Of_Root_Property,
+	using _:    glTF_Child_Of_Root_Property,
 	uri:        union {
 		string,
 	},
@@ -145,7 +153,7 @@ glTF_Bind_Buffer :: enum {
 }
 
 glTF_Buffer_View :: struct {
-	_:          glTF_Child_Of_Root_Property,
+	using _:    glTF_Child_Of_Root_Property,
 	buffer:     glTF_Id,
 	byteOffset: union {
 		int,
@@ -161,16 +169,16 @@ glTF_Buffer_View :: struct {
 
 // complete
 glTF_Camera_Orthographic :: struct {
-	_:     glTF_Property,
-	xmag:  f64,
-	ymag:  f64,
-	zfar:  f64,
-	znear: f64,
+	using _: glTF_Property,
+	xmag:    f64,
+	ymag:    f64,
+	zfar:    f64,
+	znear:   f64,
 }
 
 // complete
 glTF_Camera_Perspective :: struct {
-	_:           glTF_Property,
+	using _:     glTF_Property,
 	aspectRatio: union {
 		f64,
 	},
@@ -186,7 +194,7 @@ GLTF_CAMERA_ORTHOGRAPHIC :: "orthographic"
 
 // complete
 glTF_Camera :: struct {
-	_:            glTF_Child_Of_Root_Property,
+	using _:      glTF_Child_Of_Root_Property,
 	orthographic: union {
 		glTF_Camera_Orthographic,
 	},
@@ -201,7 +209,7 @@ GLTF_IMAGE_PNG :: "image/png"
 
 // complete
 glTF_Image :: struct {
-	_:          glTF_Child_Of_Root_Property,
+	using _:    glTF_Child_Of_Root_Property,
 	uri:        union {
 		string,
 	},
@@ -215,14 +223,14 @@ glTF_Image :: struct {
 
 // complete
 glTF_Texture_Info :: struct {
-	_:        glTF_Property,
+	using _:  glTF_Property,
 	index:    glTF_Id,
 	texCoord: int, // default: 0
 }
 
 // complete
 glTF_Material_Pbr_Metallic_Roughness :: struct {
-	_:                        glTF_Property,
+	using _:                  glTF_Property,
 	baseColorFactor:          union {
 		[]f64, // default: [ 1.0, 1.0, 1.0, 1.0 ]
 	},
@@ -240,15 +248,15 @@ glTF_Material_Pbr_Metallic_Roughness :: struct {
 
 // complete
 glTF_Material_Normal_Texture_Info :: struct {
-	_:     glTF_Texture_Info,
-	scale: union {
+	using _: glTF_Texture_Info,
+	scale:   union {
 		f64, // default: 1 ???
 	},
 }
 
 // complete
 glTF_Material_Occlusion_Texture_Info :: struct {
-	_:        glTF_Texture_Info,
+	using _:  glTF_Texture_Info,
 	strength: union {
 		f64, // default: 1 ???
 	},
@@ -260,7 +268,7 @@ GLTF_MATERIAL_ALPHA_MODE_BLEND :: "BLEND"
 
 // complete
 glTF_Material :: struct {
-	_:                    glTF_Child_Of_Root_Property,
+	using _:              glTF_Child_Of_Root_Property,
 	pbrMetallicRoughness: union {
 		glTF_Material_Pbr_Metallic_Roughness,
 	},
@@ -297,7 +305,7 @@ glTF_Mesh_Primitive_Type :: enum {
 
 // complete
 glTF_Mesh_Primitive :: struct {
-	_:          glTF_Property,
+	using _:    glTF_Property,
 	attributes: map[string]int,
 	indices:    union {
 		glTF_Id,
@@ -313,7 +321,7 @@ glTF_Mesh_Primitive :: struct {
 
 // complete
 glTF_Mesh :: struct {
-	_:          glTF_Child_Of_Root_Property,
+	using _:    glTF_Child_Of_Root_Property,
 	primitives: []glTF_Mesh_Primitive,
 	weights:    union {
 		[]f64,
@@ -322,7 +330,7 @@ glTF_Mesh :: struct {
 
 // complete
 glTF_Node :: struct {
-	_:                     glTF_Child_Of_Root_Property,
+	using _:               glTF_Child_Of_Root_Property,
 	camera:                union {
 		glTF_Id,
 	},
@@ -374,7 +382,7 @@ glTF_Texture_Wrapping_Mode :: enum {
 
 // complete
 glTF_Sampler :: struct {
-	_:         glTF_Child_Of_Root_Property,
+	using _:   glTF_Child_Of_Root_Property,
 	magFilter: union {
 		glTF_Magnification_Filter,
 	},
@@ -391,15 +399,15 @@ glTF_Sampler :: struct {
 
 // complete
 glTF_Scene :: struct {
-	_:     glTF_Child_Of_Root_Property,
-	nodes: union {
+	using _: glTF_Child_Of_Root_Property,
+	nodes:   union {
 		[]glTF_Id,
 	},
 }
 
 // complete
 glTF_Skin :: struct {
-	_:                   glTF_Child_Of_Root_Property,
+	using _:             glTF_Child_Of_Root_Property,
 	inverseBindMatrices: union {
 		glTF_Id,
 	},
@@ -409,8 +417,8 @@ glTF_Skin :: struct {
 	joints:              []glTF_Id,
 }
 
-glTF :: struct {
-	_:                  glTF_Property,
+glTF_Document :: struct {
+	using _:            glTF_Property,
 	extensionsUsed:     union {
 		[]string,
 	},
