@@ -13,7 +13,6 @@ glTF_Child_Of_Root_Property :: struct {
 	},
 }
 
-
 glTF_Accessor_Component_Type :: enum int {
 	BYTE           = 5120,
 	UNSIGNED_BYTE  = 5121,

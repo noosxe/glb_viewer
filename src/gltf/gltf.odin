@@ -15,7 +15,10 @@ glTF_Error :: enum {
 	None,
 	Invalid_Magic,
 	Unknown_First_Chunk,
+	Access_Error,
+	Out_of_Bounds,
 }
+
 Error :: union #shared_nil {
 	os.Error,
 	json.Unmarshal_Error,
@@ -34,9 +37,10 @@ ChunkHeader :: struct {
 }
 
 Glb_Container :: struct {
-	file:       os.Handle,
-	gltf:       ^glTF_Document,
-	gltf_arena: vmem.Arena,
+	file:             os.Handle,
+	bin_chunk_offset: i64,
+	gltf:             ^glTF_Document,
+	gltf_arena:       vmem.Arena,
 }
 
 glb_load :: proc(path: string) -> (container: ^Glb_Container, err: Error) {
@@ -95,8 +99,32 @@ glb_load :: proc(path: string) -> (container: ^Glb_Container, err: Error) {
 			container.gltf = new(glTF_Document)
 			json.unmarshal(data, container.gltf, allocator = arena_allocator) or_return
 			container.gltf_arena = gltf_arena
+		case:
+			log.debug("this is an unknown chunk")
+			return container, .Unknown_First_Chunk
+		}
+	}
 
-			log.debug("all done")
+	log.debug("reading binary chunk")
+
+	{
+		os.seek(file, i64(read_counter), os.SEEK_SET)
+
+		chunkHeader := ChunkHeader{}
+		read := os.read_ptr(file, &chunkHeader, size_of(ChunkHeader)) or_return
+		read_counter += u32(read)
+
+		log.debugf("chunk data length: %d bytes", chunkHeader.chunkLength)
+		log.debugf("chunk type: %X", chunkHeader.chunkType)
+
+		os.seek(file, i64(read_counter), os.SEEK_SET)
+
+		switch chunkHeader.chunkType {
+		case CHUNK_BIN:
+			log.debug("this is a BIN chunk")
+
+			container.bin_chunk_offset = i64(read_counter)
+
 			return container, nil
 		case:
 			log.debug("this is an unknown chunk")
@@ -110,4 +138,123 @@ glb_destroy :: proc(container: ^Glb_Container) {
 	os.close(container.file)
 	free(container.gltf)
 	free(container)
+}
+
+get_nodes :: proc(container: ^Glb_Container) -> (nodes: []glTF_Node) {
+	switch ns in container.gltf.nodes {
+	case []glTF_Node:
+		#assert(type_of(ns) == []glTF_Node)
+		nodes = ns
+	}
+
+	return
+}
+
+get_mesh :: proc(container: ^Glb_Container, id: glTF_Id) -> (mesh: glTF_Mesh, err: Error) {
+	switch meshes in container.gltf.meshes {
+	case []glTF_Mesh:
+		#assert(type_of(meshes) == []glTF_Mesh)
+
+		if len(meshes) < id {
+			err = .Out_of_Bounds
+			return
+		}
+
+		mesh = meshes[id]
+		return
+	}
+
+	err = .Access_Error
+
+	return
+}
+
+Binary_Buffer :: struct {
+	handle:      os.Handle,
+	byte_offset: i64,
+}
+
+get_buffer :: proc(container: ^Glb_Container, buf_id: glTF_Id) -> (buff: Binary_Buffer, err: Error) {
+	switch buffers in container.gltf.buffers {
+	case []glTF_Buffer:
+		#assert(type_of(buffers) == []glTF_Buffer)
+		buffer := buffers[buf_id]
+
+		assert(buffer.uri == nil, "external binaries not implemented")
+		buff.handle = container.file
+		buff.byte_offset = container.bin_chunk_offset
+		return
+	}
+
+	return
+}
+
+Binary_Buffer_View :: struct {
+	handle:      os.Handle,
+	byte_offset: i64,
+	byte_length: i64,
+	byte_stride: union {
+		int,
+	},
+}
+
+get_buffer_view :: proc(container: ^Glb_Container, view_id: glTF_Id) -> (b_view: Binary_Buffer_View, err: Error) {
+	switch buffer_views in container.gltf.bufferViews {
+	case []glTF_Buffer_View:
+		buffer_view := buffer_views[view_id]
+
+		buff := get_buffer(container, buffer_view.buffer) or_return
+		b_view.handle = buff.handle
+		b_view.byte_offset = buff.byte_offset + (buffer_view.byteOffset != nil ? i64(buffer_view.byteOffset.(int)) : 0)
+		b_view.byte_length = i64(buffer_view.byteLength)
+		b_view.byte_stride = buffer_view.byteStride
+	}
+
+	return
+}
+
+get_accessor :: proc(container: ^Glb_Container, accessor_id: glTF_Id) -> (accessor: glTF_Accessor, err: Error) {
+	switch accessors in container.gltf.accessors {
+	case []glTF_Accessor:
+		#assert(type_of(accessors) == []glTF_Accessor)
+
+		if len(accessors) < accessor_id {
+			err = .Out_of_Bounds
+			return
+		}
+
+		accessor = accessors[accessor_id]
+		return
+	}
+
+	err = .Access_Error
+
+	return
+}
+
+read_buffer :: proc(buffer_view: Binary_Buffer_View, target: rawptr, length: int) -> (read: int, err: Error) {
+	os.seek(buffer_view.handle, buffer_view.byte_offset, os.SEEK_SET) or_return
+	return os.read_ptr(buffer_view.handle, target, length)
+}
+
+get_texture_image :: proc(container: ^Glb_Container, id: glTF_Id) -> (err: Error) {
+	switch images in container.gltf.images {
+	case []glTF_Image:
+		#assert(type_of(images) == []glTF_Image)
+
+		if len(images) < id {
+			err = .Out_of_Bounds
+			return
+		}
+
+		image := images[id]
+
+		if image.bufferView != nil {
+			v := get_buffer_view(container, image.bufferView.(glTF_Id)) or_return
+			tmp_buf := make([]u8, v.byte_length)
+			read_buffer(v, raw_data(tmp_buf), int(v.byte_length)) or_return
+		}
+	}
+
+	return
 }
