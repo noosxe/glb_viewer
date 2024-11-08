@@ -5,6 +5,9 @@ import "core:fmt"
 import "core:log"
 import vmem "core:mem/virtual"
 import "core:os"
+import "core:path/filepath"
+import "core:strings"
+import stbi "vendor:stb/image"
 
 VALID_MAGIC :: 0x46546C67
 
@@ -17,6 +20,7 @@ glTF_Error :: enum {
 	Unknown_First_Chunk,
 	Access_Error,
 	Out_of_Bounds,
+	File_Not_Found,
 }
 
 Error :: union #shared_nil {
@@ -38,14 +42,22 @@ ChunkHeader :: struct {
 
 Glb_Container :: struct {
 	file:             os.Handle,
+	asset_path:       string,
 	bin_chunk_offset: i64,
 	gltf:             ^glTF_Document,
 	gltf_arena:       vmem.Arena,
 }
 
-glb_load :: proc(path: string) -> (container: ^Glb_Container, err: Error) {
-	container = new(Glb_Container)
-	file := os.open(path) or_return
+glb_load :: proc(path: string, allocator := context.allocator) -> (container: ^Glb_Container, err: Error) {
+	asset_path, ok := filepath.abs(path, allocator) // TODO: handle the allocation
+	if !ok {
+		err = .File_Not_Found
+		return
+	}
+
+	container = new(Glb_Container, allocator)
+	container.asset_path = asset_path
+	file := os.open(asset_path) or_return
 	container.file = file
 
 	read_counter: u32
@@ -96,7 +108,7 @@ glb_load :: proc(path: string) -> (container: ^Glb_Container, err: Error) {
 
 			gltf_arena: vmem.Arena
 			arena_allocator := vmem.arena_allocator(&gltf_arena)
-			container.gltf = new(glTF_Document)
+			container.gltf = new(glTF_Document, allocator)
 			json.unmarshal(data, container.gltf, allocator = arena_allocator) or_return
 			container.gltf_arena = gltf_arena
 		case:
@@ -133,11 +145,11 @@ glb_load :: proc(path: string) -> (container: ^Glb_Container, err: Error) {
 	}
 }
 
-glb_destroy :: proc(container: ^Glb_Container) {
+glb_destroy :: proc(container: ^Glb_Container, allocator := context.allocator) {
 	vmem.arena_destroy(&container.gltf_arena)
 	os.close(container.file)
-	free(container.gltf)
-	free(container)
+	free(container.gltf, allocator)
+	free(container, allocator)
 }
 
 get_nodes :: proc(container: ^Glb_Container) -> (nodes: []glTF_Node) {
@@ -237,7 +249,15 @@ read_buffer :: proc(buffer_view: Binary_Buffer_View, target: rawptr, length: int
 	return os.read_ptr(buffer_view.handle, target, length)
 }
 
-get_texture_image :: proc(container: ^Glb_Container, id: glTF_Id) -> (err: Error) {
+Image :: struct {
+	data:     [^]byte,
+	width:    i32,
+	height:   i32,
+	mipmaps:  i32,
+	channels: i32,
+}
+
+get_texture_image :: proc(container: ^Glb_Container, id: glTF_Id) -> (img: Image, err: Error) {
 	switch images in container.gltf.images {
 	case []glTF_Image:
 		#assert(type_of(images) == []glTF_Image)
@@ -250,9 +270,51 @@ get_texture_image :: proc(container: ^Glb_Container, id: glTF_Id) -> (err: Error
 		image := images[id]
 
 		if image.bufferView != nil {
+			log.debug("image has a bufferView")
+
 			v := get_buffer_view(container, image.bufferView.(glTF_Id)) or_return
 			tmp_buf := make([]u8, v.byte_length)
 			read_buffer(v, raw_data(tmp_buf), int(v.byte_length)) or_return
+
+			img.data = stbi.load_from_memory(
+				raw_data(tmp_buf),
+				i32(v.byte_length),
+				&img.width,
+				&img.height,
+				&img.channels,
+				0,
+			)
+			img.mipmaps = 1
+			return
+		}
+
+		if image.uri != nil {
+			log.debug("image has a uri")
+
+			uri := image.uri.(string)
+
+			if strings.starts_with(uri, "data:") {
+				return
+			}
+
+			image_path: string
+
+			if filepath.is_abs(uri) {
+				image_path = uri
+			} else {
+				asset_dir := filepath.dir(container.asset_path, allocator = context.temp_allocator)
+				image_path = filepath.join({asset_dir, uri}, allocator = context.temp_allocator)
+			}
+
+			img.data = stbi.load(
+				strings.clone_to_cstring(image_path, allocator = context.temp_allocator),
+				&img.width,
+				&img.height,
+				&img.channels,
+				0,
+			)
+			img.mipmaps = 1
+			return
 		}
 	}
 

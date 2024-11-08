@@ -236,7 +236,9 @@ glTF_Material_Pbr_Metallic_Roughness :: struct {
 	baseColorTexture:         union {
 		glTF_Texture_Info,
 	},
-	metallicFactor:           f64, // default: 0
+	metallicFactor:           union {
+		f64, // default: 1
+	},
 	roughnessFactor:          union {
 		f64, // default: 1 ???
 	},

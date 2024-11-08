@@ -84,10 +84,11 @@ main :: proc() {
 		rl.ClearBackground(rl.BLUE)
 		rl.DrawGrid(20, 1)
 
-		rl.DrawModelWires(model, {0, 0, 0}, 1, rl.WHITE)
+		rl.DrawModel(model, {0, 0, 0}, 1, rl.WHITE)
 
 		rl.EndMode3D()
 		rl.EndDrawing()
+		free_all(context.temp_allocator)
 	}
 
 	rl.CloseWindow()
@@ -95,13 +96,13 @@ main :: proc() {
 	vmem.arena_destroy(&loader_arena)
 }
 
-load_model_from_file :: proc(path: string, allocator: mem.Allocator) -> rl.Model {
-	container, err := gltf.glb_load(path)
+load_model_from_file :: proc(path: string, allocator := context.allocator) -> rl.Model {
+	container, err := gltf.glb_load(path, allocator)
 	if err != nil {
 		fmt.eprintf("error opening glb file: ", err)
 		os.exit(1)
 	}
-	defer gltf.glb_destroy(container)
+	defer gltf.glb_destroy(container, allocator)
 
 	model := rl.Model{}
 	load_err := load_model(container, &model, allocator)
@@ -119,13 +120,10 @@ load_model_from_file :: proc(path: string, allocator: mem.Allocator) -> rl.Model
 	return model
 }
 
-load_model :: proc(container: ^gltf.Glb_Container, model: ^rl.Model, allocator: mem.Allocator) -> Error {
-	context.allocator = allocator
-
+load_model :: proc(container: ^gltf.Glb_Container, model: ^rl.Model, allocator := context.allocator) -> Error {
 	if container.gltf.meshes == nil {
 		return .No_Meshes
 	}
-
 
 	nodes := gltf.get_nodes(container)
 
@@ -148,24 +146,24 @@ load_model :: proc(container: ^gltf.Glb_Container, model: ^rl.Model, allocator: 
 		materials := container.gltf.materials.([]gltf.glTF_Material)
 		model.materialCount = i32(len(materials)) + 1
 
-		materialContainer := make([]rl.Material, model.materialCount)
+		materialContainer := make([]rl.Material, model.materialCount, allocator)
 		model.materials = raw_data(materialContainer)
 		model.materials[0] = rl.LoadMaterialDefault()
 
 		matIdx := 1
 		for mat in materials {
 			materialContainer[matIdx] = rl.LoadMaterialDefault()
-			// load_material(container, mat, &materialContainer[matIdx])
+			load_material(container, mat, &materialContainer[matIdx])
 			matIdx += 1
 		}
 	} else {
-		materialContainer := make([]rl.Material, 1)
+		materialContainer := make([]rl.Material, 1, allocator)
 		model.materials = raw_data(materialContainer)
 		model.materials[0] = rl.LoadMaterialDefault()
 	}
 
 	// load meshes
-	meshContainer := make([]rl.Mesh, meshCount)
+	meshContainer := make([]rl.Mesh, meshCount, allocator)
 	model.meshes = raw_data(meshContainer)
 
 	meshIdx := 0
@@ -176,16 +174,16 @@ load_model :: proc(container: ^gltf.Glb_Container, model: ^rl.Model, allocator: 
 
 		mesh := gltf.get_mesh(container, node.mesh.(gltf.glTF_Id)) or_return
 		for primitive in mesh.primitives {
-			load_mesh(container, node, primitive, &meshContainer[meshIdx]) or_return
+			load_mesh(container, node, primitive, &meshContainer[meshIdx], allocator = allocator) or_return
 
 			meshIdx += 1
 		}
 	}
 
-	model.meshMaterial = raw_data(make([]i32, model.meshCount))
+	model.meshMaterial = raw_data(make([]i32, model.meshCount, allocator))
 
 	for i in 0 ..< model.meshCount {
-		model.meshMaterial[0] = 0
+		model.meshMaterial[i] = 1
 	}
 
 	return nil
@@ -197,11 +195,146 @@ load_material :: proc(container: ^gltf.Glb_Container, mat: gltf.glTF_Material, m
 
 		if (pbr.baseColorTexture != nil) {
 			b_color_tex := pbr.baseColorTexture.(gltf.glTF_Texture_Info)
-			gltf.get_texture_image(container, b_color_tex.index)
+			img := gltf.get_texture_image(container, b_color_tex.index) or_return
+
+			if img.data != nil {
+				material.maps[rl.MaterialMapIndex.ALBEDO].texture = rl.LoadTextureFromImage(
+					rl.Image {
+						data = img.data,
+						width = img.width,
+						height = img.height,
+						mipmaps = img.mipmaps,
+						format = image_format_from_channels(img.channels),
+					},
+				)
+			}
+		}
+
+		switch base_color_factor in pbr.baseColorFactor {
+		case []f64:
+			#assert(type_of(base_color_factor) == []f64)
+			material.maps[rl.MaterialMapIndex.ALBEDO].color = rl.Color {
+				u8(base_color_factor[0]) * 255,
+				u8(base_color_factor[1]) * 255,
+				u8(base_color_factor[2]) * 255,
+				u8(base_color_factor[3]) * 255,
+			}
+		case:
+			material.maps[rl.MaterialMapIndex.ALBEDO].color = rl.Color{255, 255, 255, 255}
+		}
+
+		if (pbr.metallicRoughnessTexture != nil) {
+			metr_tex := pbr.metallicRoughnessTexture.(gltf.glTF_Texture_Info)
+			img := gltf.get_texture_image(container, metr_tex.index) or_return
+
+			if img.data != nil {
+				material.maps[rl.MaterialMapIndex.ROUGHNESS].texture = rl.LoadTextureFromImage(
+					rl.Image {
+						data = img.data,
+						width = img.width,
+						height = img.height,
+						mipmaps = img.mipmaps,
+						format = image_format_from_channels(img.channels),
+					},
+				)
+			}
+
+			switch roughness in pbr.roughnessFactor {
+			case f64:
+				#assert(type_of(roughness) == f64)
+				material.maps[rl.MaterialMapIndex.ROUGHNESS].value = f32(roughness)
+			case:
+				material.maps[rl.MaterialMapIndex.ROUGHNESS].value = 1
+			}
+
+			switch metallness in pbr.metallicFactor {
+			case f64:
+				#assert(type_of(metallness) == f64)
+				material.maps[rl.MaterialMapIndex.METALNESS].value = f32(metallness)
+			case:
+				material.maps[rl.MaterialMapIndex.METALNESS].value = 1
+			}
+		}
+
+		if mat.normalTexture != nil {
+			normal_texture := mat.normalTexture.(gltf.glTF_Material_Normal_Texture_Info)
+			img := gltf.get_texture_image(container, normal_texture.index) or_return
+
+			if img.data != nil {
+				material.maps[rl.MaterialMapIndex.NORMAL].texture = rl.LoadTextureFromImage(
+					rl.Image {
+						data = img.data,
+						width = img.width,
+						height = img.height,
+						mipmaps = img.mipmaps,
+						format = image_format_from_channels(img.channels),
+					},
+				)
+			}
+		}
+
+		if mat.occlusionTexture != nil {
+			occlusion_texture := mat.occlusionTexture.(gltf.glTF_Material_Occlusion_Texture_Info)
+			img := gltf.get_texture_image(container, occlusion_texture.index) or_return
+
+			if img.data != nil {
+				material.maps[rl.MaterialMapIndex.OCCLUSION].texture = rl.LoadTextureFromImage(
+					rl.Image {
+						data = img.data,
+						width = img.width,
+						height = img.height,
+						mipmaps = img.mipmaps,
+						format = image_format_from_channels(img.channels),
+					},
+				)
+			}
+		}
+
+		if mat.emissiveTexture != nil {
+			emissive_texture := mat.emissiveTexture.(gltf.glTF_Texture_Info)
+			img := gltf.get_texture_image(container, emissive_texture.index) or_return
+
+			if img.data != nil {
+				material.maps[rl.MaterialMapIndex.EMISSION].texture = rl.LoadTextureFromImage(
+					rl.Image {
+						data = img.data,
+						width = img.width,
+						height = img.height,
+						mipmaps = img.mipmaps,
+						format = image_format_from_channels(img.channels),
+					},
+				)
+			}
+
+			switch emissive_factor in mat.emissiveFactor {
+			case []f64:
+				#assert(type_of(emissive_factor) == []f64)
+				material.maps[rl.MaterialMapIndex.EMISSION].color = rl.Color {
+					u8(emissive_factor[0]) * 255,
+					u8(emissive_factor[1]) * 255,
+					u8(emissive_factor[2]) * 255,
+					255,
+				}
+			}
 		}
 	}
 
 	return nil
+}
+
+image_format_from_channels :: proc(channels: i32) -> rl.PixelFormat {
+	switch channels {
+	case 1:
+		return .UNCOMPRESSED_GRAYSCALE
+	case 2:
+		return .UNCOMPRESSED_GRAY_ALPHA
+	case 3:
+		return .UNCOMPRESSED_R8G8B8
+	case 4:
+		return .UNCOMPRESSED_R8G8B8A8
+	}
+
+	return .UNKNOWN
 }
 
 load_mesh :: proc(
@@ -209,15 +342,16 @@ load_mesh :: proc(
 	node: gltf.glTF_Node,
 	primitive: gltf.glTF_Mesh_Primitive,
 	mesh: ^rl.Mesh,
+	allocator := context.allocator,
 ) -> Error {
 	attributes := primitive.attributes
 
 	for attr, accessor_index in attributes {
-		load_attribute(container, accessor_index, attr, mesh) or_return
+		load_attribute(container, accessor_index, attr, mesh, allocator = allocator) or_return
 	}
 
 	if primitive.indices != nil {
-		load_indices(container, primitive.indices.(gltf.glTF_Id), mesh) or_return
+		load_indices(container, primitive.indices.(gltf.glTF_Id), mesh, allocator = allocator) or_return
 	} else {
 		mesh.triangleCount = mesh.vertexCount / 3
 	}
@@ -266,11 +400,17 @@ node_transform :: proc(node: gltf.glTF_Node) -> matrix[4, 4]f32 {
 	return linalg.Matrix4x4f32(1) * linalg.matrix4_from_quaternion(rotation) * scale_mat * translation_mat
 }
 
-load_attribute :: proc(container: ^gltf.Glb_Container, id: gltf.glTF_Id, attr: string, mesh: ^rl.Mesh) -> Error {
+load_attribute :: proc(
+	container: ^gltf.Glb_Container,
+	id: gltf.glTF_Id,
+	attr: string,
+	mesh: ^rl.Mesh,
+	allocator := context.allocator,
+) -> Error {
 	accessor := gltf.get_accessor(container, id) or_return
 
 	if attr == "POSITION" {
-		vertices := make([]f32, accessor.count * 3)
+		vertices := make([]f32, accessor.count * 3, allocator)
 		mesh.vertexCount = i32(accessor.count)
 		mesh.vertices = raw_data(vertices)
 
@@ -287,7 +427,7 @@ load_attribute :: proc(container: ^gltf.Glb_Container, id: gltf.glTF_Id, attr: s
 	}
 
 	if attr == "NORMAL" {
-		normals := make([]f32, accessor.count * 3)
+		normals := make([]f32, accessor.count * 3, allocator)
 		mesh.normals = raw_data(normals)
 
 		switch bf in accessor.bufferView {
@@ -303,7 +443,7 @@ load_attribute :: proc(container: ^gltf.Glb_Container, id: gltf.glTF_Id, attr: s
 	}
 
 	if attr == "TANGENT" {
-		tangents := make([]f32, accessor.count * 4)
+		tangents := make([]f32, accessor.count * 4, allocator)
 		mesh.tangents = raw_data(tangents)
 
 		switch bf in accessor.bufferView {
@@ -319,7 +459,7 @@ load_attribute :: proc(container: ^gltf.Glb_Container, id: gltf.glTF_Id, attr: s
 	}
 
 	if attr == "TEXCOORD_0" {
-		texcoords := make([]f32, accessor.count * 2)
+		texcoords := make([]f32, accessor.count * 2, allocator)
 		mesh.texcoords = raw_data(texcoords)
 
 		switch bf in accessor.bufferView {
@@ -337,7 +477,12 @@ load_attribute :: proc(container: ^gltf.Glb_Container, id: gltf.glTF_Id, attr: s
 	return nil
 }
 
-load_indices :: proc(container: ^gltf.Glb_Container, id: gltf.glTF_Id, mesh: ^rl.Mesh) -> Error {
+load_indices :: proc(
+	container: ^gltf.Glb_Container,
+	id: gltf.glTF_Id,
+	mesh: ^rl.Mesh,
+	allocator := context.allocator,
+) -> Error {
 	accessor := gltf.get_accessor(container, id) or_return
 
 	if accessor.bufferView == nil {
@@ -364,7 +509,7 @@ load_indices :: proc(container: ^gltf.Glb_Container, id: gltf.glTF_Id, mesh: ^rl
 		log.fatal("UNSIGNED_INT indices not implemented")
 
 	case .UNSIGNED_SHORT:
-		indices := make([]u16, accessor.count)
+		indices := make([]u16, accessor.count, allocator)
 		mesh.indices = raw_data(indices)
 
 		gltf.read_buffer(v, mesh.indices, accessor.count * size_of(u16)) or_return
