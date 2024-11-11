@@ -54,63 +54,70 @@ _load_model_from_container :: proc(
 
 	nodes := gltf.get_nodes(container)
 
-	// count meshes
-	meshCount := 0
-	for node in nodes {
-		if node.mesh == nil {
-			continue
+	{
+		// count meshes
+		meshCount: i32 = 0
+		for node in nodes {
+			if node.mesh == nil {
+				continue
+			}
+
+			mesh := gltf.get_mesh(container, node.mesh.(gltf.glTF_Id)) or_return
+			for primitive in mesh.primitives {
+				meshCount += 1
+			}
 		}
-
-		mesh := gltf.get_mesh(container, node.mesh.(gltf.glTF_Id)) or_return
-		for primitive in mesh.primitives {
-			meshCount += 1
-		}
-	}
-	model.meshCount = i32(meshCount)
-
-	// materials
-	if container.gltf.materials != nil {
-		materials := container.gltf.materials.([]gltf.glTF_Material)
-		model.materialCount = i32(len(materials)) + 1
-
-		materialContainer := make([]rl.Material, model.materialCount, allocator)
-		model.materials = raw_data(materialContainer)
-		model.materials[0] = rl.LoadMaterialDefault()
-
-		matIdx := 1
-		for mat in materials {
-			materialContainer[matIdx] = rl.LoadMaterialDefault()
-			load_material(container, mat, &materialContainer[matIdx])
-			matIdx += 1
-		}
-	} else {
-		materialContainer := make([]rl.Material, 1, allocator)
-		model.materials = raw_data(materialContainer)
-		model.materials[0] = rl.LoadMaterialDefault()
+		model.meshCount = meshCount
+		model.meshMaterial = raw_data(make([]i32, model.meshCount, allocator))
 	}
 
-	// load meshes
-	meshContainer := make([]rl.Mesh, meshCount, allocator)
-	model.meshes = raw_data(meshContainer)
+	{
+		// materials
+		if container.gltf.materials != nil {
+			materials := container.gltf.materials.([]gltf.glTF_Material)
+			model.materialCount = i32(len(materials)) + 1
 
-	meshIdx := 0
-	for node in nodes {
-		if node.mesh == nil {
-			continue
-		}
+			materialContainer := make([]rl.Material, model.materialCount, allocator)
+			model.materials = raw_data(materialContainer)
+			model.materials[0] = rl.LoadMaterialDefault()
 
-		mesh := gltf.get_mesh(container, node.mesh.(gltf.glTF_Id)) or_return
-		for primitive in mesh.primitives {
-			load_mesh(container, node, primitive, &meshContainer[meshIdx], allocator = allocator) or_return
-
-			meshIdx += 1
+			matIdx := 1
+			for mat in materials {
+				materialContainer[matIdx] = rl.LoadMaterialDefault()
+				load_material(container, mat, &materialContainer[matIdx])
+				matIdx += 1
+			}
+		} else {
+			materialContainer := make([]rl.Material, 1, allocator)
+			model.materials = raw_data(materialContainer)
+			model.materials[0] = rl.LoadMaterialDefault()
 		}
 	}
 
-	model.meshMaterial = raw_data(make([]i32, model.meshCount, allocator))
+	{
+		// load meshes
+		meshContainer := make([]rl.Mesh, model.meshCount, allocator)
+		model.meshes = raw_data(meshContainer)
 
-	for i in 0 ..< model.meshCount {
-		model.meshMaterial[i] = 1
+		meshIdx: i32 = 0
+		for node in nodes {
+			if node.mesh == nil {
+				continue
+			}
+
+			mesh := gltf.get_mesh(container, node.mesh.(gltf.glTF_Id)) or_return
+			for primitive in mesh.primitives {
+				load_mesh(container, node, primitive, &meshContainer[meshIdx], allocator = allocator) or_return
+
+				if primitive.material != nil {
+					model.meshMaterial[meshIdx] = 1 + i32(primitive.material.(gltf.glTF_Id)) // offset for the default material applied
+				} else {
+					model.meshMaterial[meshIdx] = 0
+				}
+
+				meshIdx += 1
+			}
+		}
 	}
 
 	return nil

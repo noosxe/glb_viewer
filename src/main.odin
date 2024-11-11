@@ -48,7 +48,6 @@ main :: proc() {
 		return
 	}
 
-
 	loader_arena: vmem.Arena
 	arena_allocator := vmem.arena_allocator(&loader_arena)
 
