@@ -44,7 +44,7 @@ load_model :: proc(path: string, allocator := context.allocator) -> rl.Model {
 
 @(private)
 _load_model_from_container :: proc(
-	container: ^gltf.Glb_Container,
+	container: ^gltf.Container,
 	model: ^rl.Model,
 	allocator := context.allocator,
 ) -> Error {
@@ -123,7 +123,7 @@ _load_model_from_container :: proc(
 	return nil
 }
 
-load_material :: proc(container: ^gltf.Glb_Container, mat: gltf.glTF_Material, material: ^rl.Material) -> Error {
+load_material :: proc(container: ^gltf.Container, mat: gltf.glTF_Material, material: ^rl.Material) -> Error {
 	if (mat.pbrMetallicRoughness != nil) {
 		pbr := mat.pbrMetallicRoughness.(gltf.glTF_Material_Pbr_Metallic_Roughness)
 
@@ -272,7 +272,7 @@ image_format_from_channels :: proc(channels: i32) -> rl.PixelFormat {
 }
 
 load_mesh :: proc(
-	container: ^gltf.Glb_Container,
+	container: ^gltf.Container,
 	node: gltf.glTF_Node,
 	primitive: gltf.glTF_Mesh_Primitive,
 	mesh: ^rl.Mesh,
@@ -335,7 +335,7 @@ node_transform :: proc(node: gltf.glTF_Node) -> matrix[4, 4]f32 {
 }
 
 load_attribute :: proc(
-	container: ^gltf.Glb_Container,
+	container: ^gltf.Container,
 	id: gltf.glTF_Id,
 	attr: string,
 	mesh: ^rl.Mesh,
@@ -412,7 +412,7 @@ load_attribute :: proc(
 }
 
 load_indices :: proc(
-	container: ^gltf.Glb_Container,
+	container: ^gltf.Container,
 	id: gltf.glTF_Id,
 	mesh: ^rl.Mesh,
 	allocator := context.allocator,

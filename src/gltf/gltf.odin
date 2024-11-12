@@ -40,7 +40,7 @@ ChunkHeader :: struct {
 	chunkType:   u32,
 }
 
-Glb_Container :: struct {
+Container :: struct {
 	file:             os.Handle,
 	asset_path:       string,
 	bin_chunk_offset: i64,
@@ -48,14 +48,35 @@ Glb_Container :: struct {
 	gltf_arena:       vmem.Arena,
 }
 
-glb_load :: proc(path: string, allocator := context.allocator) -> (container: ^Glb_Container, err: Error) {
+/**
+ * Load a .gltf or .glb asset file.
+ */
+load_file :: proc(path: string, allocator := context.allocator) -> (container: ^Container, err: Error) {
 	asset_path, ok := filepath.abs(path, allocator) // TODO: handle the allocation
 	if !ok {
 		err = .File_Not_Found
 		return
 	}
 
-	container = new(Glb_Container, allocator)
+	container = new(Container, allocator)
+	container.asset_path = asset_path
+	file := os.open(asset_path) or_return
+	container.file = file
+	return
+}
+
+get_scenes :: proc(container: ^Container) {
+
+}
+
+glb_load :: proc(path: string, allocator := context.allocator) -> (container: ^Container, err: Error) {
+	asset_path, ok := filepath.abs(path, allocator) // TODO: handle the allocation
+	if !ok {
+		err = .File_Not_Found
+		return
+	}
+
+	container = new(Container, allocator)
 	container.asset_path = asset_path
 	file := os.open(asset_path) or_return
 	container.file = file
@@ -145,14 +166,14 @@ glb_load :: proc(path: string, allocator := context.allocator) -> (container: ^G
 	}
 }
 
-glb_destroy :: proc(container: ^Glb_Container, allocator := context.allocator) {
+glb_destroy :: proc(container: ^Container, allocator := context.allocator) {
 	vmem.arena_destroy(&container.gltf_arena)
 	os.close(container.file)
 	free(container.gltf, allocator)
 	free(container, allocator)
 }
 
-get_nodes :: proc(container: ^Glb_Container) -> (nodes: []glTF_Node) {
+get_nodes :: proc(container: ^Container) -> (nodes: []glTF_Node) {
 	switch ns in container.gltf.nodes {
 	case []glTF_Node:
 		#assert(type_of(ns) == []glTF_Node)
@@ -162,7 +183,7 @@ get_nodes :: proc(container: ^Glb_Container) -> (nodes: []glTF_Node) {
 	return
 }
 
-get_mesh :: proc(container: ^Glb_Container, id: glTF_Id) -> (mesh: glTF_Mesh, err: Error) {
+get_mesh :: proc(container: ^Container, id: glTF_Id) -> (mesh: glTF_Mesh, err: Error) {
 	switch meshes in container.gltf.meshes {
 	case []glTF_Mesh:
 		#assert(type_of(meshes) == []glTF_Mesh)
@@ -186,7 +207,7 @@ Binary_Buffer :: struct {
 	byte_offset: i64,
 }
 
-get_buffer :: proc(container: ^Glb_Container, buf_id: glTF_Id) -> (buff: Binary_Buffer, err: Error) {
+get_buffer :: proc(container: ^Container, buf_id: glTF_Id) -> (buff: Binary_Buffer, err: Error) {
 	switch buffers in container.gltf.buffers {
 	case []glTF_Buffer:
 		#assert(type_of(buffers) == []glTF_Buffer)
@@ -205,12 +226,10 @@ Binary_Buffer_View :: struct {
 	handle:      os.Handle,
 	byte_offset: i64,
 	byte_length: i64,
-	byte_stride: union {
-		int,
-	},
+	byte_stride: Maybe(int),
 }
 
-get_buffer_view :: proc(container: ^Glb_Container, view_id: glTF_Id) -> (b_view: Binary_Buffer_View, err: Error) {
+get_buffer_view :: proc(container: ^Container, view_id: glTF_Id) -> (b_view: Binary_Buffer_View, err: Error) {
 	switch buffer_views in container.gltf.bufferViews {
 	case []glTF_Buffer_View:
 		buffer_view := buffer_views[view_id]
@@ -225,7 +244,7 @@ get_buffer_view :: proc(container: ^Glb_Container, view_id: glTF_Id) -> (b_view:
 	return
 }
 
-get_accessor :: proc(container: ^Glb_Container, accessor_id: glTF_Id) -> (accessor: glTF_Accessor, err: Error) {
+get_accessor :: proc(container: ^Container, accessor_id: glTF_Id) -> (accessor: glTF_Accessor, err: Error) {
 	switch accessors in container.gltf.accessors {
 	case []glTF_Accessor:
 		#assert(type_of(accessors) == []glTF_Accessor)
@@ -257,7 +276,7 @@ Image :: struct {
 	channels: i32,
 }
 
-get_texture_image :: proc(container: ^Glb_Container, id: glTF_Id) -> (img: Image, err: Error) {
+get_texture_image :: proc(container: ^Container, id: glTF_Id) -> (img: Image, err: Error) {
 	switch images in container.gltf.images {
 	case []glTF_Image:
 		#assert(type_of(images) == []glTF_Image)
