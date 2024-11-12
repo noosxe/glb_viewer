@@ -19,7 +19,7 @@ Error :: union {
 }
 
 load_model :: proc(path: string, allocator := context.allocator) -> rl.Model {
-	container, err := gltf.glb_load(path, allocator)
+	container, err := gltf.load_file(path, allocator)
 	if err != nil {
 		fmt.eprintf("error opening glb file: ", err)
 		os.exit(1)

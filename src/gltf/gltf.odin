@@ -52,34 +52,31 @@ Container :: struct {
  * Load a .gltf or .glb asset file.
  */
 load_file :: proc(path: string, allocator := context.allocator) -> (container: ^Container, err: Error) {
-	asset_path, ok := filepath.abs(path, allocator) // TODO: handle the allocation
+	asset_path, ok := filepath.abs(path, context.temp_allocator)
 	if !ok {
+		log.debugf("failed to resolve asset file at path: %s", path)
 		err = .File_Not_Found
 		return
 	}
 
+	log.debugf("loading asset file at path: %s", asset_path)
 	container = new(Container, allocator)
 	container.asset_path = asset_path
 	file := os.open(asset_path) or_return
 	container.file = file
+
+	err = load_glb(container, allocator)
+	if err == .Invalid_Magic {
+		log.debug("magic check failed, trying to load as .gltf")
+		load_gltf(container, allocator) or_return
+		err = nil
+	}
+
 	return
 }
 
-get_scenes :: proc(container: ^Container) {
-
-}
-
-glb_load :: proc(path: string, allocator := context.allocator) -> (container: ^Container, err: Error) {
-	asset_path, ok := filepath.abs(path, allocator) // TODO: handle the allocation
-	if !ok {
-		err = .File_Not_Found
-		return
-	}
-
-	container = new(Container, allocator)
-	container.asset_path = asset_path
-	file := os.open(asset_path) or_return
-	container.file = file
+load_glb :: proc(container: ^Container, allocator := context.allocator) -> (err: Error) {
+	file := container.file
 
 	read_counter: u32
 	header := Header{}
@@ -89,7 +86,7 @@ glb_load :: proc(path: string, allocator := context.allocator) -> (container: ^C
 
 		if header.magic != VALID_MAGIC {
 			log.debug("invalid magic")
-			return container, .Invalid_Magic
+			return .Invalid_Magic
 		}
 
 		log.debug("glTF magic valid")
@@ -134,7 +131,7 @@ glb_load :: proc(path: string, allocator := context.allocator) -> (container: ^C
 			container.gltf_arena = gltf_arena
 		case:
 			log.debug("this is an unknown chunk")
-			return container, .Unknown_First_Chunk
+			return .Unknown_First_Chunk
 		}
 	}
 
@@ -158,12 +155,31 @@ glb_load :: proc(path: string, allocator := context.allocator) -> (container: ^C
 
 			container.bin_chunk_offset = i64(read_counter)
 
-			return container, nil
+			return nil
 		case:
 			log.debug("this is an unknown chunk")
-			return container, .Unknown_First_Chunk
+			return .Unknown_First_Chunk
 		}
 	}
+}
+
+load_gltf :: proc(container: ^Container, allocator := context.allocator) -> (err: Error) {
+	file := container.file
+
+	size := os.file_size(file) or_return
+
+	os.seek(file, 0, os.SEEK_SET)
+	file_data := make([]byte, size, context.temp_allocator)
+
+	os.read_full(file, file_data) or_return
+
+	gltf_arena: vmem.Arena
+	arena_allocator := vmem.arena_allocator(&gltf_arena)
+	container.gltf = new(glTF_Document, allocator)
+	json.unmarshal(file_data, container.gltf, allocator = arena_allocator) or_return
+	container.gltf_arena = gltf_arena
+
+	return
 }
 
 glb_destroy :: proc(container: ^Container, allocator := context.allocator) {
@@ -171,6 +187,16 @@ glb_destroy :: proc(container: ^Container, allocator := context.allocator) {
 	os.close(container.file)
 	free(container.gltf, allocator)
 	free(container, allocator)
+}
+
+get_scenes :: proc(container: ^Container) -> (result: []glTF_Scene) {
+	switch scenes in container.gltf.scenes {
+		case []glTF_Scene:
+		#assert(type_of(scenes) == []glTF_Scene)
+		result = scenes
+	}
+
+	return
 }
 
 get_nodes :: proc(container: ^Container) -> (nodes: []glTF_Node) {
