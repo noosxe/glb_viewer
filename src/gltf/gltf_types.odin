@@ -275,6 +275,12 @@ glTF_Skin :: struct {
 	joints:              []glTF_Id,
 }
 
+glTF_Texture :: struct {
+	using _: glTF_Child_Of_Root_Property,
+	sampler: Maybe(glTF_Id),
+	source: Maybe(glTF_Id),
+}
+
 glTF_Document :: struct {
 	using _:            glTF_Property,
 	extensionsUsed:     Maybe([]string),
@@ -293,5 +299,5 @@ glTF_Document :: struct {
 	scene:              Maybe(glTF_Id),
 	scenes:             Maybe([]glTF_Scene),
 	skins:              Maybe([]glTF_Skin),
-	textures:           Maybe([]glTF_Texture_Info),
+	textures:           Maybe([]glTF_Texture),
 }

@@ -347,64 +347,79 @@ Image :: struct {
 }
 
 get_texture_image :: proc(container: ^Container, id: glTF_Id) -> (img: Image, err: Error) {
-	switch images in container.gltf.images {
-	case []glTF_Image:
-		#assert(type_of(images) == []glTF_Image)
+	texture: glTF_Texture
+	switch textures in container.gltf.textures {
+	case []glTF_Texture:
+		#assert(type_of(textures) == []glTF_Texture)
 
-		if len(images) < id {
+		if len(textures) <= id {
 			err = .Out_of_Bounds
 			return
 		}
 
-		image := images[id]
+		texture = textures[id]
+	}
 
-		if image.bufferView != nil {
-			log.debug("image has a bufferView")
+	image_id := texture.source.(glTF_Id)
+	image: glTF_Image
+	switch images in container.gltf.images {
+	case []glTF_Image:
+		#assert(type_of(images) == []glTF_Image)
 
-			v := get_buffer_view(container, image.bufferView.(glTF_Id)) or_return
-			tmp_buf := make([]u8, v.byte_length, context.temp_allocator)
-			read_buffer(v, raw_data(tmp_buf), int(v.byte_length)) or_return
-
-			img.data = stbi.load_from_memory(
-				raw_data(tmp_buf),
-				i32(v.byte_length),
-				&img.width,
-				&img.height,
-				&img.channels,
-				0,
-			)
-			img.mipmaps = 1
+		if len(images) <= image_id {
+			err = .Out_of_Bounds
 			return
 		}
 
-		if image.uri != nil {
-			log.debug("image has a uri")
+		image = images[image_id]
+	}
 
-			uri := image.uri.(string)
+	if image.bufferView != nil {
+		log.debug("image has a bufferView")
 
-			if strings.starts_with(uri, "data:") {
-				return
-			}
+		v := get_buffer_view(container, image.bufferView.(glTF_Id)) or_return
+		tmp_buf := make([]u8, v.byte_length, context.temp_allocator)
+		read_buffer(v, raw_data(tmp_buf), int(v.byte_length)) or_return
 
-			image_path: string
+		img.data = stbi.load_from_memory(
+			raw_data(tmp_buf),
+			i32(v.byte_length),
+			&img.width,
+			&img.height,
+			&img.channels,
+			0,
+		)
+		img.mipmaps = 1
+		return
+	}
 
-			if filepath.is_abs(uri) {
-				image_path = uri
-			} else {
-				asset_dir := filepath.dir(container.asset_path, allocator = context.temp_allocator)
-				image_path = filepath.join({asset_dir, uri}, allocator = context.temp_allocator)
-			}
+	if image.uri != nil {
+		log.debug("image has a uri")
 
-			img.data = stbi.load(
-				strings.clone_to_cstring(image_path, allocator = context.temp_allocator),
-				&img.width,
-				&img.height,
-				&img.channels,
-				0,
-			)
-			img.mipmaps = 1
+		uri := image.uri.(string)
+
+		if strings.starts_with(uri, "data:") {
 			return
 		}
+
+		image_path: string
+
+		if filepath.is_abs(uri) {
+			image_path = uri
+		} else {
+			asset_dir := filepath.dir(container.asset_path, allocator = context.temp_allocator)
+			image_path = filepath.join({asset_dir, uri}, allocator = context.temp_allocator)
+		}
+
+		img.data = stbi.load(
+			strings.clone_to_cstring(image_path, allocator = context.temp_allocator),
+			&img.width,
+			&img.height,
+			&img.channels,
+			0,
+		)
+		img.mipmaps = 1
+		return
 	}
 
 	return

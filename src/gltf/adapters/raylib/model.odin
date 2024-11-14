@@ -128,6 +128,7 @@ load_material :: proc(container: ^gltf.Container, mat: gltf.glTF_Material, mater
 		pbr := mat.pbrMetallicRoughness.(gltf.glTF_Material_Pbr_Metallic_Roughness)
 
 		if (pbr.baseColorTexture != nil) {
+			log.debug("material has base color texture")
 			b_color_tex := pbr.baseColorTexture.(gltf.glTF_Texture_Info)
 			img := gltf.get_texture_image(container, b_color_tex.index) or_return
 
@@ -147,6 +148,7 @@ load_material :: proc(container: ^gltf.Container, mat: gltf.glTF_Material, mater
 		switch base_color_factor in pbr.baseColorFactor {
 		case []f64:
 			#assert(type_of(base_color_factor) == []f64)
+			log.debugf("base color factor: %v", base_color_factor)
 			material.maps[rl.MaterialMapIndex.ALBEDO].color = rl.Color {
 				u8(base_color_factor[0]) * 255,
 				u8(base_color_factor[1]) * 255,
@@ -158,6 +160,7 @@ load_material :: proc(container: ^gltf.Container, mat: gltf.glTF_Material, mater
 		}
 
 		if (pbr.metallicRoughnessTexture != nil) {
+			log.debug("material has metallic roughness texture")
 			metr_tex := pbr.metallicRoughnessTexture.(gltf.glTF_Texture_Info)
 			img := gltf.get_texture_image(container, metr_tex.index) or_return
 
@@ -176,6 +179,7 @@ load_material :: proc(container: ^gltf.Container, mat: gltf.glTF_Material, mater
 			switch roughness in pbr.roughnessFactor {
 			case f64:
 				#assert(type_of(roughness) == f64)
+				log.debugf("roughness factor: %v", roughness)
 				material.maps[rl.MaterialMapIndex.ROUGHNESS].value = f32(roughness)
 			case:
 				material.maps[rl.MaterialMapIndex.ROUGHNESS].value = 1
@@ -184,6 +188,7 @@ load_material :: proc(container: ^gltf.Container, mat: gltf.glTF_Material, mater
 			switch metallness in pbr.metallicFactor {
 			case f64:
 				#assert(type_of(metallness) == f64)
+				log.debugf("metallness factor: %v", metallness)
 				material.maps[rl.MaterialMapIndex.METALNESS].value = f32(metallness)
 			case:
 				material.maps[rl.MaterialMapIndex.METALNESS].value = 1
@@ -191,6 +196,7 @@ load_material :: proc(container: ^gltf.Container, mat: gltf.glTF_Material, mater
 		}
 
 		if mat.normalTexture != nil {
+			log.debug("material has normal texture")
 			normal_texture := mat.normalTexture.(gltf.glTF_Material_Normal_Texture_Info)
 			img := gltf.get_texture_image(container, normal_texture.index) or_return
 
@@ -208,6 +214,7 @@ load_material :: proc(container: ^gltf.Container, mat: gltf.glTF_Material, mater
 		}
 
 		if mat.occlusionTexture != nil {
+			log.debug("material has occlusion texture")
 			occlusion_texture := mat.occlusionTexture.(gltf.glTF_Material_Occlusion_Texture_Info)
 			img := gltf.get_texture_image(container, occlusion_texture.index) or_return
 
@@ -225,6 +232,7 @@ load_material :: proc(container: ^gltf.Container, mat: gltf.glTF_Material, mater
 		}
 
 		if mat.emissiveTexture != nil {
+			log.debug("material has emissive texture")
 			emissive_texture := mat.emissiveTexture.(gltf.glTF_Texture_Info)
 			img := gltf.get_texture_image(container, emissive_texture.index) or_return
 
@@ -243,6 +251,7 @@ load_material :: proc(container: ^gltf.Container, mat: gltf.glTF_Material, mater
 			switch emissive_factor in mat.emissiveFactor {
 			case []f64:
 				#assert(type_of(emissive_factor) == []f64)
+				log.debugf("emissive factor: %v", emissive_factor)
 				material.maps[rl.MaterialMapIndex.EMISSION].color = rl.Color {
 					u8(emissive_factor[0]) * 255,
 					u8(emissive_factor[1]) * 255,
