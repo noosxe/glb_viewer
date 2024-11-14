@@ -52,7 +52,7 @@ Container :: struct {
  * Load a .gltf or .glb asset file.
  */
 load_file :: proc(path: string, allocator := context.allocator) -> (container: ^Container, err: Error) {
-	asset_path, ok := filepath.abs(path, context.temp_allocator)
+	asset_path, ok := filepath.abs(path, allocator)
 	if !ok {
 		log.debugf("failed to resolve asset file at path: %s", path)
 		err = .File_Not_Found
@@ -318,7 +318,7 @@ get_texture_image :: proc(container: ^Container, id: glTF_Id) -> (img: Image, er
 			log.debug("image has a bufferView")
 
 			v := get_buffer_view(container, image.bufferView.(glTF_Id)) or_return
-			tmp_buf := make([]u8, v.byte_length)
+			tmp_buf := make([]u8, v.byte_length, context.temp_allocator)
 			read_buffer(v, raw_data(tmp_buf), int(v.byte_length)) or_return
 
 			img.data = stbi.load_from_memory(
