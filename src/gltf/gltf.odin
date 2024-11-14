@@ -46,6 +46,7 @@ Container :: struct {
 	bin_chunk_offset: i64,
 	gltf:             ^glTF_Document,
 	gltf_arena:       vmem.Arena,
+	bin_handlers:     map[int]os.Handle, // os handlers for external bin files
 }
 
 /**
@@ -182,16 +183,25 @@ load_gltf :: proc(container: ^Container, allocator := context.allocator) -> (err
 	return
 }
 
-glb_destroy :: proc(container: ^Container, allocator := context.allocator) {
+delete_container :: proc(container: ^Container, allocator := context.allocator) {
 	vmem.arena_destroy(&container.gltf_arena)
 	os.close(container.file)
+
+	if container.bin_handlers != nil {
+		for _, &file in container.bin_handlers {
+			os.close(file)
+		}
+		delete(container.bin_handlers)
+	}
+
 	free(container.gltf, allocator)
+	delete(container.asset_path, allocator)
 	free(container, allocator)
 }
 
 get_scenes :: proc(container: ^Container) -> (result: []glTF_Scene) {
 	switch scenes in container.gltf.scenes {
-		case []glTF_Scene:
+	case []glTF_Scene:
 		#assert(type_of(scenes) == []glTF_Scene)
 		result = scenes
 	}
@@ -233,15 +243,49 @@ Binary_Buffer :: struct {
 	byte_offset: i64,
 }
 
-get_buffer :: proc(container: ^Container, buf_id: glTF_Id) -> (buff: Binary_Buffer, err: Error) {
+get_buffer :: proc(
+	container: ^Container,
+	buf_id: glTF_Id,
+	allocator := context.allocator,
+) -> (
+	buff: Binary_Buffer,
+	err: Error,
+) {
 	switch buffers in container.gltf.buffers {
 	case []glTF_Buffer:
 		#assert(type_of(buffers) == []glTF_Buffer)
 		buffer := buffers[buf_id]
 
-		assert(buffer.uri == nil, "external binaries not implemented")
-		buff.handle = container.file
-		buff.byte_offset = container.bin_chunk_offset
+		if buffer.uri == nil {
+			buff.handle = container.file
+			buff.byte_offset = container.bin_chunk_offset
+		} else {
+			if container.bin_handlers == nil {
+				container.bin_handlers = make(map[int]os.Handle, allocator)
+			}
+
+			if file, ok := container.bin_handlers[buf_id]; ok {
+				buff.handle = file
+				buff.byte_offset = 0
+				return
+			}
+
+			uri := buffer.uri.(string)
+			bin_path: string
+
+			if filepath.is_abs(uri) {
+				bin_path = uri
+			} else {
+				asset_dir := filepath.dir(container.asset_path, allocator = context.temp_allocator)
+				bin_path = filepath.join({asset_dir, uri}, allocator = context.temp_allocator)
+			}
+
+			bin_file := os.open(bin_path) or_return
+			buff.handle = bin_file
+			buff.byte_offset = 0
+
+			container.bin_handlers[buf_id] = bin_file
+		}
 		return
 	}
 

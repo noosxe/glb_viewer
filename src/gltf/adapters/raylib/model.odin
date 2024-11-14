@@ -24,7 +24,7 @@ load_model :: proc(path: string, allocator := context.allocator) -> rl.Model {
 		fmt.eprintf("error opening glb file: ", err)
 		os.exit(1)
 	}
-	defer gltf.glb_destroy(container, allocator)
+	defer gltf.delete_container(container, allocator)
 
 	model := rl.Model{}
 	load_err := _load_model_from_container(container, &model, allocator)
