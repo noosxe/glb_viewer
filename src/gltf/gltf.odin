@@ -21,6 +21,7 @@ glTF_Error :: enum {
 	Access_Error,
 	Out_of_Bounds,
 	File_Not_Found,
+	No_Data_Uri,
 }
 
 Error :: union #shared_nil {
@@ -399,6 +400,7 @@ get_texture_image :: proc(container: ^Container, id: glTF_Id) -> (img: Image, er
 		uri := image.uri.(string)
 
 		if strings.starts_with(uri, "data:") {
+			err = .No_Data_Uri
 			return
 		}
 
