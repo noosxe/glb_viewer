@@ -15,16 +15,13 @@ import rl "vendor:raylib"
 import "ext:back"
 
 App_State :: struct {
-	preview: Preview,
-	gui:     Gui_State,
+	preview: Preview_State,
+	gui:     ^Gui_State,
 }
 
-Gui_State :: struct {
-	file_chooser: ^Gui_File_Chooser,
-}
-
-Preview :: struct {
-	model: ^rl.Model,
+Preview_State :: struct {
+	camera: rl.Camera3D,
+	model:  ^rl.Model,
 }
 
 main :: proc() {
@@ -59,6 +56,7 @@ main :: proc() {
 	app_state := App_State{}
 
 	loader_arena: vmem.Arena
+	defer vmem.arena_destroy(&loader_arena)
 	arena_allocator := vmem.arena_allocator(&loader_arena)
 
 	rl.SetConfigFlags({rl.ConfigFlag.WINDOW_RESIZABLE})
@@ -67,7 +65,7 @@ main :: proc() {
 	rl.SetTargetFPS(144)
 	rl.SetMouseCursor(rl.MouseCursor.ARROW)
 
-	camera := rl.Camera3D {
+	app_state.preview.camera = rl.Camera3D {
 		position   = rl.Vector3{3, 3, 3},
 		target     = rl.Vector3{0, 0, 0},
 		up         = rl.Vector3{0, 1, 0},
@@ -75,46 +73,35 @@ main :: proc() {
 		projection = .PERSPECTIVE,
 	}
 
+	app_state.gui = gui_init(arena_allocator)
+	defer {
+		gui_destroy(app_state.gui, arena_allocator)
+		app_state.gui = nil
+	}
+
 	// model := gltf_rl.load_model(path, arena_allocator)
 
 	for !rl.WindowShouldClose() {
-		rl.UpdateCamera(&camera, rl.CameraMode.ORBITAL)
-
 		rl.BeginDrawing()
-		rl.BeginMode3D(camera)
 		rl.ClearBackground(rl.BLUE)
-		rl.DrawGrid(20, 1)
 
-		if app_state.preview.model != nil {
-			rl.DrawModel(app_state.preview.model^, {0, 0, 0}, 1, rl.WHITE)
-		}
-
-		rl.EndMode3D()
-
-		draw_gui(&app_state, arena_allocator)
+		draw_preview(&app_state.preview)
+		gui_draw(app_state.gui, arena_allocator)
 
 		rl.EndDrawing()
 		free_all(context.temp_allocator)
 	}
 
-	vmem.arena_destroy(&loader_arena)
 }
 
-draw_gui :: proc(state: ^App_State, allocator := context.allocator) {
-	w := rl.GetRenderWidth()
+draw_preview :: proc(state: ^Preview_State) {
+	rl.UpdateCamera(&state.camera, rl.CameraMode.ORBITAL)
+	rl.BeginMode3D(state.camera)
+	rl.DrawGrid(20, 1)
 
-	rl.GuiPanel(rl.Rectangle{0, 0, f32(w), 50}, nil)
-
-	if rl.GuiButton(rl.Rectangle{10, 10, 30, 30}, "#5#") {
-		cwd := os.get_current_directory(context.temp_allocator)
-		state.gui.file_chooser = file_chooser_init(cwd, allocator)
-		log.debug("created a file chooser dialog")
+	if state.model != nil {
+		rl.DrawModel(state.model^, {0, 0, 0}, 1, rl.WHITE)
 	}
 
-	if state.gui.file_chooser != nil {
-		if !file_chooser_draw(state.gui.file_chooser, allocator) {
-			file_chooser_destroy(state.gui.file_chooser, allocator)
-			state.gui.file_chooser = nil
-		}
-	}
+	rl.EndMode3D()
 }

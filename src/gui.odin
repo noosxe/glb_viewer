@@ -1,9 +1,14 @@
 package glb_viewer
 
-import "core:os"
 import "core:log"
+import "core:os"
+import "core:strings"
 
 import rl "vendor:raylib"
+
+Gui_State :: struct {
+	file_chooser: ^Gui_File_Chooser,
+}
 
 Gui_File_Chooser :: struct {
 	dir:          string,
@@ -13,6 +18,37 @@ Gui_File_Chooser :: struct {
 	active:       i32,
 	focus:        i32,
 	dialog_rect:  rl.Rectangle,
+}
+
+gui_init :: proc(allocator := context.allocator) -> ^Gui_State {
+	return new(Gui_State, allocator)
+}
+
+gui_destroy :: proc(state: ^Gui_State, allocator := context.allocator) {
+	if state.file_chooser != nil {
+		file_chooser_destroy(state.file_chooser, allocator)
+	}
+
+	free(state, allocator)
+}
+
+gui_draw :: proc(state: ^Gui_State, allocator := context.allocator) {
+	w := rl.GetRenderWidth()
+
+	rl.GuiPanel(rl.Rectangle{0, 0, f32(w), 50}, nil)
+
+	if rl.GuiButton(rl.Rectangle{10, 10, 30, 30}, "#5#") {
+		cwd := os.get_current_directory(context.temp_allocator)
+		state.file_chooser = file_chooser_init(cwd, allocator)
+		log.debug("created a file chooser dialog")
+	}
+
+	if state.file_chooser != nil {
+		if !file_chooser_draw(state.file_chooser, allocator) {
+			file_chooser_destroy(state.file_chooser, allocator)
+			state.file_chooser = nil
+		}
+	}
 }
 
 file_chooser_init :: proc(path: string, allocator := context.allocator) -> ^Gui_File_Chooser {
@@ -49,12 +85,22 @@ file_chooser_init :: proc(path: string, allocator := context.allocator) -> ^Gui_
 }
 
 file_chooser_destroy :: proc(file_chooser: ^Gui_File_Chooser, allocator := context.allocator) {
-	for fi in file_chooser.entries {
-		os.file_info_delete(fi, allocator)
+	if file_chooser == nil {
+		log.warn("calling destroy with nil")
+		return
 	}
 
-	delete(file_chooser.entries, allocator)
-	delete(file_chooser.items, allocator)
+	if file_chooser.entries != nil {
+		for fi in file_chooser.entries {
+			os.file_info_delete(fi, allocator)
+		}
+
+		delete(file_chooser.entries, allocator)
+	}
+
+	if file_chooser.items != nil {
+		delete(file_chooser.items, allocator)
+	}
 
 	free(file_chooser, allocator)
 }
