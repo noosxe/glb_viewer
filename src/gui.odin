@@ -1,10 +1,14 @@
 package glb_viewer
 
+import "core:fmt"
 import "core:log"
 import "core:os"
 import "core:strings"
 
 import rl "vendor:raylib"
+
+file_chooser_width :: 500
+file_chooser_height :: 400
 
 Gui_State :: struct {
 	file_chooser: ^Gui_File_Chooser,
@@ -20,7 +24,75 @@ Gui_File_Chooser :: struct {
 	dialog_rect:  rl.Rectangle,
 }
 
+//----------------------------------------------------------------------------------
+// Generic Component
+//----------------------------------------------------------------------------------
+
+Gui_Component_Type :: enum {
+	Vertical_Layout,
+	Horizontal_Layout,
+}
+
+Gui_Component_Base :: struct {
+	type:      Gui_Component_Type,
+	draw_proc: proc(instance: ^Gui_Component, rect: rl.Rectangle),
+	instance:  Gui_Component,
+}
+
+Gui_Component :: union {
+	Gui_Vertical_Layout,
+	Gui_Horizontal_Layout,
+}
+
+//----------------------------------------------------------------------------------
+// Vertical Layout
+//----------------------------------------------------------------------------------
+
+Gui_Vertical_Layout :: struct {
+	using _:  Gui_Component_Base,
+	children: [dynamic]^Gui_Component,
+}
+
+gui_vertical_layout_init :: proc(allocator := context.allocator) -> ^Gui_Vertical_Layout {
+	r := new(Gui_Vertical_Layout, allocator)
+	r.type = .Vertical_Layout
+	r.draw_proc = gui_vertical_layout_draw
+	r.instance = Gui_Vertical_Layout{}
+	return r
+}
+
+gui_vertical_layout_draw :: proc(instance: ^Gui_Vertical_Layout, rect: rl.Rectangle) {
+
+}
+
+//----------------------------------------------------------------------------------
+// Horizontal Layout
+//----------------------------------------------------------------------------------
+
+Gui_Horizontal_Layout :: struct {}
+
+@(private = "file")
+Gui_Horizontal_Layout_Component :: Gui_Component(Gui_Horizontal_Layout)
+gui_horizontal_layout_init :: proc(allocator := context.allocator) -> ^Gui_Horizontal_Layout_Component {
+	r := new(Gui_Horizontal_Layout_Component, allocator)
+	r.type = .Horizontal_Layout
+	r.draw_proc = gui_horizontal_layout_draw
+	r.instance = Gui_Horizontal_Layout{}
+	return r
+}
+
+gui_horizontal_layout_draw :: proc(instance: ^Gui_Horizontal_Layout, rect: rl.Rectangle) {
+
+}
+
 gui_init :: proc(allocator := context.allocator) -> ^Gui_State {
+	h := gui_horizontal_layout_init()
+	v := gui_vertical_layout_init()
+
+	fmt.println(v.instance.children)
+	append(&v.instance.children, h)
+	fmt.println(v.instance.children)
+
 	return new(Gui_State, allocator)
 }
 
@@ -78,7 +150,11 @@ file_chooser_init :: proc(path: string, allocator := context.allocator) -> ^Gui_
 	}
 
 	{
-		chooser.dialog_rect = rl.Rectangle{100, 100, 400, 300}
+		screen_width := rl.GetRenderWidth()
+		screen_height := rl.GetRenderHeight()
+		chooser_x := (screen_width - file_chooser_width) / 2
+		chooser_y := (screen_height - file_chooser_height) / 2
+		chooser.dialog_rect = rl.Rectangle{f32(chooser_x), f32(chooser_y), file_chooser_width, file_chooser_height}
 	}
 
 	return chooser

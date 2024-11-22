@@ -3,7 +3,6 @@ package glb_viewer
 import "core:fmt"
 import "core:log"
 import "core:math/linalg"
-import "core:mem"
 import vmem "core:mem/virtual"
 import "core:os"
 import "core:path/filepath"
