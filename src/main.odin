@@ -13,6 +13,7 @@ import rl "vendor:raylib"
 
 import "ext:back"
 
+
 App_State :: struct {
 	preview: Preview_State,
 	gui:     ^Gui_State,
@@ -78,6 +79,18 @@ main :: proc() {
 		app_state.gui = nil
 	}
 
+	{
+		toolbar := gui_toolbar_make(allocator = arena_allocator)
+		open_file := gui_icon_button_make(
+			"#5#",
+			onclick = b_click,
+			allocator = arena_allocator,
+		)
+
+		append(&toolbar.children, open_file)
+		append(&app_state.gui.children, toolbar)
+	}
+
 	// model := gltf_rl.load_model(path, arena_allocator)
 
 	for !rl.WindowShouldClose() {
@@ -103,4 +116,8 @@ draw_preview :: proc(state: ^Preview_State) {
 	}
 
 	rl.EndMode3D()
+}
+
+b_click :: proc() {
+	fmt.println("click")
 }
