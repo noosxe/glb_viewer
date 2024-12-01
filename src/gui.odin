@@ -9,7 +9,10 @@ import "core:strings"
 import rl "vendor:raylib"
 
 Color_Background :: rl.Color{26, 27, 38, 255}
+Color_Background_Lighter :: rl.Color{30, 31, 41, 255}
 Color_Foreground :: rl.Color{192, 202, 245, 255}
+Color_Border_Active :: rl.Color{122, 162, 247, 255}
+Color_Border_Inactive :: rl.Color{41, 46, 66, 255}
 
 Gui_Alignment :: enum {
 	Start,
@@ -28,8 +31,21 @@ Gui_Flow :: enum {
 }
 
 Gui_Border :: struct {
-	color: rl.Color,
-	width: f32,
+	color_active:   rl.Color,
+	color_inactive: rl.Color,
+	width:          f32,
+}
+
+Gui_Active_Border :: Gui_Border {
+	color_active   = Color_Border_Active,
+	color_inactive = Color_Border_Inactive,
+	width          = 3,
+}
+
+Gui_Inactive_Border :: Gui_Border {
+	color_active   = Color_Border_Active,
+	color_inactive = Color_Border_Inactive,
+	width          = 3,
 }
 
 Gui_Component_Layout :: struct {
@@ -49,128 +65,6 @@ Gui_Component_Layout :: struct {
 	border:  [4]Gui_Border,
 }
 
-gui_calculate_layout :: proc(
-	component: ^Gui_Component,
-	rect: rl.Rectangle,
-) -> (
-	size: rl.Vector2,
-) {
-	layout := component.layout
-	padding := layout.padding
-
-	content_rect := rl.Rectangle {
-		x      = rect.x + padding[3],
-		y      = rect.y + padding[0],
-		width  = rect.width - padding[1] - padding[3],
-		height = rect.height - padding[0] - padding[2],
-	}
-
-	switch layout.flow {
-	case .Horizontal:
-		width_contain: bool
-		switch w in layout.width {
-		case Gui_Sizing:
-			if w == .Stretch {
-				size.x = rect.width
-			} else {
-				width_contain = true
-			}
-		case f32:
-			size.x = w
-		}
-
-		height_contain: bool
-		switch h in layout.height {
-		case Gui_Sizing:
-			if h == .Stretch {
-				size.y = rect.height
-			} else {
-				height_contain = true
-			}
-		case f32:
-			size.y = h
-		}
-
-		content_width: f32
-		for &child in component.children {
-			sz := gui_calculate_layout(
-				child,
-				rl.Rectangle {
-					x = content_rect.x + content_width,
-					y = content_rect.y,
-					width = content_rect.width - content_width,
-					height = content_rect.height,
-				},
-			)
-
-			content_width += sz.x
-
-			if height_contain {
-				size.y = math.max(size.y, sz.y) + padding[0] + padding[2]
-			}
-		}
-
-		if width_contain {
-			size.x = content_width
-		}
-	case .Vertical:
-		width_contain: bool
-		switch w in layout.width {
-		case Gui_Sizing:
-			if w == .Stretch {
-				size.x = rect.width
-			} else {
-				width_contain = true
-			}
-		case f32:
-			size.x = w
-		}
-
-		height_contain: bool
-		switch h in layout.height {
-		case Gui_Sizing:
-			if h == .Stretch {
-				size.y = rect.height
-			} else {
-				height_contain = true
-			}
-		case f32:
-			size.y = h
-		}
-
-		content_height: f32
-		for &child in component.children {
-			sz := gui_calculate_layout(
-				child,
-				rl.Rectangle {
-					x = content_rect.x,
-					y = content_rect.y + content_height,
-					width = content_rect.width,
-					height = content_rect.height - content_height,
-				},
-			)
-
-			if width_contain {
-				size.x = math.max(size.x, sz.x) + padding[1] + padding[3]
-			}
-
-			content_height += sz.y
-		}
-
-		if height_contain {
-			size.y = content_height
-		}
-	}
-
-	component.rect = rl.Rectangle {
-		x      = rect.x,
-		y      = rect.y,
-		width  = size.x,
-		height = size.y,
-	}
-
-	return
-}
 
 //------------------------------------------------------------------------------
 // Root Gui
@@ -198,14 +92,18 @@ gui_draw :: proc(state: ^Gui_State, allocator := context.allocator) {
 	h := rl.GetRenderHeight()
 
 	for &child in state.children {
-		gui_calculate_layout(
+		child_rect := gui_calculate_layout(
 			child,
 			rl.Rectangle{x = 0, y = 0, width = f32(w), height = f32(h)},
 		)
+		child.runtime_rect = child_rect
 	}
 
 	for &child in state.children {
-		gui_component_draw(child)
+		gui_component_draw(
+			child,
+			rl.Rectangle{x = 0, y = 0, width = f32(w), height = f32(h)},
+		)
 	}
 	/*
 	if rl.GuiButton(rl.Rectangle{10, 10, 30, 30}, "#5#") {
@@ -222,17 +120,215 @@ gui_draw :: proc(state: ^Gui_State, allocator := context.allocator) {
 	*/
 }
 
+gui_calculate_layout :: proc(
+	component: ^Gui_Component,
+	rect: rl.Rectangle, // total area available for drawing
+) -> (
+	occupied_rect: rl.Rectangle,
+) {
+	layout := component.layout
+	padding := layout.padding
+	border := layout.border
+
+	// free area available for drawing
+	content_rect := rl.Rectangle {
+		x      = border[3].width + padding[3],
+		y      = border[0].width + padding[0],
+		width  = rect.width - border[1].width - border[3].width - padding[1] - padding[3],
+		height = rect.height - border[0].width - border[0].width - padding[0] - padding[2],
+	}
+
+	switch layout.flow {
+	case .Horizontal:
+		width_contain: bool
+		switch w in layout.width {
+		case Gui_Sizing:
+			if w == .Stretch {
+				occupied_rect.width = rect.width
+			} else {
+				width_contain = true
+			}
+		case f32:
+			occupied_rect.width = w
+		}
+
+		height_contain: bool
+		switch h in layout.height {
+		case Gui_Sizing:
+			if h == .Stretch {
+				occupied_rect.height = rect.height
+			} else {
+				height_contain = true
+			}
+		case f32:
+			occupied_rect.height = h
+		}
+
+		content_width: f32
+		for &child in component.children {
+			child_rect := gui_calculate_layout(
+				child,
+				rl.Rectangle {
+					x = content_rect.x + content_width,
+					y = content_rect.y,
+					width = content_rect.width - content_width,
+					height = content_rect.height,
+				},
+			)
+			child.runtime_rect = child_rect
+
+			content_width += child_rect.width
+
+			if height_contain {
+				occupied_rect.height =
+					math.max(occupied_rect.height, child_rect.height) +
+					border[0].width +
+					border[2].width +
+					padding[0] +
+					padding[2]
+			}
+		}
+
+		if width_contain {
+			occupied_rect.width = content_width
+		}
+	case .Vertical:
+		width_contain: bool
+		switch w in layout.width {
+		case Gui_Sizing:
+			if w == .Stretch {
+				occupied_rect.width = rect.width
+			} else {
+				width_contain = true
+			}
+		case f32:
+			occupied_rect.width = w
+		}
+
+		height_contain: bool
+		switch h in layout.height {
+		case Gui_Sizing:
+			if h == .Stretch {
+				occupied_rect.height = rect.height
+			} else {
+				height_contain = true
+			}
+		case f32:
+			occupied_rect.height = h
+		}
+
+		content_height: f32
+		for &child in component.children {
+			child_rect := gui_calculate_layout(
+				child,
+				rl.Rectangle {
+					x = content_rect.x,
+					y = content_rect.y + content_height,
+					width = content_rect.width,
+					height = content_rect.height - content_height,
+				},
+			)
+			child.runtime_rect = child_rect
+
+			if width_contain {
+				occupied_rect.width =
+					math.max(occupied_rect.width, child_rect.width) +
+					border[1].width +
+					border[3].width +
+					padding[1] +
+					padding[3]
+			}
+
+			content_height += child_rect.height
+		}
+
+		if height_contain {
+			occupied_rect.height = content_height
+		}
+	}
+
+	switch layout.h_align {
+	case .Start:
+		occupied_rect.x = rect.x
+	case .Center:
+		occupied_rect.x = (rect.width - occupied_rect.width) / 2
+	case .End:
+		occupied_rect.x = rect.width - occupied_rect.width
+	}
+
+	switch layout.v_align {
+	case .Start:
+		occupied_rect.y = rect.y
+	case .Center:
+		occupied_rect.y = (rect.height - occupied_rect.height) / 2
+	case .End:
+		occupied_rect.y = rect.height - occupied_rect.height
+	}
+
+	return
+}
+
+gui_draw_border :: proc(component: ^Gui_Component, rect: rl.Rectangle) {
+	border := component.layout.border
+	is_active: bool
+
+	{
+		mouse_pos := rl.GetMousePosition()
+		is_active = rl.CheckCollisionPointRec(mouse_pos, rect)
+	}
+
+	if border[0].width > 0 {
+		rl.DrawRectangle(
+			i32(rect.x - border[3].width),
+			i32(rect.y - border[0].width),
+			i32(rect.width + border[3].width + border[1].width),
+			i32(border[0].width),
+			is_active ? border[0].color_active : border[0].color_inactive,
+		)
+	}
+
+	if border[1].width > 0 {
+		rl.DrawRectangle(
+			i32(rect.x + rect.width),
+			i32(rect.y - border[0].width),
+			i32(border[1].width),
+			i32(rect.height + border[0].width + border[2].width),
+			is_active ? border[1].color_active : border[1].color_inactive,
+		)
+	}
+
+	if border[2].width > 0 {
+		rl.DrawRectangle(
+			i32(rect.x - border[3].width),
+			i32(rect.y + rect.height),
+			i32(rect.width + border[3].width + border[1].width),
+			i32(border[2].width),
+			is_active ? border[2].color_active : border[2].color_inactive,
+		)
+	}
+
+	if border[3].width > 0 {
+		rl.DrawRectangle(
+			i32(rect.x - border[3].width),
+			i32(rect.y - border[0].width),
+			i32(border[3].width),
+			i32(rect.height + border[0].width + border[2].width),
+			is_active ? border[3].color_active : border[3].color_inactive,
+		)
+	}
+}
+
 //------------------------------------------------------------------------------
 // Base Component
 //------------------------------------------------------------------------------
 
 Gui_Component :: struct {
-	instance: Gui_Component_Types,
-	layout:   Gui_Component_Layout,
-	children: [dynamic]^Gui_Component,
+	instance:     Gui_Component_Types,
+	layout:       Gui_Component_Layout,
+	children:     [dynamic]^Gui_Component,
 
 	// Runtime
-	rect:     rl.Rectangle,
+	runtime_rect: rl.Rectangle,
 }
 
 Gui_Component_Types :: union {
@@ -245,27 +341,36 @@ Gui_Component_Types :: union {
 }
 
 // Draws any Gui_Component instance.
-gui_component_draw :: proc(component: ^Gui_Component) {
+gui_component_draw :: proc(
+	component: ^Gui_Component,
+	parent_rect: rl.Rectangle,
+) {
 	instance := component.instance
-	rect := component.rect
+	own_rect := component.runtime_rect
+	final_rect := rl.Rectangle {
+		x      = parent_rect.x + own_rect.x,
+		y      = parent_rect.y + own_rect.y,
+		width  = own_rect.width,
+		height = own_rect.height,
+	}
 
 	switch &c in instance {
 	case Gui_Container:
-		gui_container_draw(&c, rect)
+		gui_container_draw(&c, final_rect)
 	case Gui_Vertical_Layout:
-		gui_vertical_layout_draw(&c, rect)
+		gui_vertical_layout_draw(&c, final_rect)
 	case Gui_Horizontal_Layout:
-		gui_horizontal_layout_draw(&c, rect)
+		gui_horizontal_layout_draw(&c, final_rect)
 	case Gui_Toolbar:
-		gui_toolbar_draw(&c, rect)
+		gui_toolbar_draw(&c, final_rect)
 	case Gui_Icon_Button:
-		gui_icon_button_draw(&c, rect)
+		gui_icon_button_draw(&c, final_rect)
 	case Gui_Dialog:
-		gui_dialog_draw(&c, rect)
+		gui_dialog_draw(&c, final_rect)
 	}
 
 	for &child in component.children {
-		gui_component_draw(child)
+		gui_component_draw(child, final_rect)
 	}
 }
 
@@ -378,11 +483,13 @@ gui_toolbar_make :: proc(
 ) -> (
 	r: ^Gui_Component,
 ) {
-	layout := layout
-	layout.flow = .Horizontal
-	layout.width = .Stretch
-	layout.height = .Contain
-	layout.padding = {5, 5, 5, 5}
+	{
+		layout := layout
+		layout.flow = .Horizontal
+		layout.width = .Stretch
+		layout.height = .Contain
+		layout.padding = {5, 5, 5, 5}
+	}
 
 	r = new(Gui_Component, allocator)
 	r.instance = Gui_Toolbar {
@@ -393,7 +500,7 @@ gui_toolbar_make :: proc(
 }
 
 gui_toolbar_draw :: proc(instance: ^Gui_Toolbar, rect: rl.Rectangle) {
-	rl.DrawRectangleRec(rect, Color_Background)
+	rl.DrawRectangleRec(rect, Color_Background_Lighter)
 }
 
 //------------------------------------------------------------------------------
@@ -454,16 +561,25 @@ gui_dialog_make :: proc(
 	layout.flow = .Vertical
 	layout.h_align = .Center
 	layout.v_align = .Center
+	layout.border = {
+		Gui_Active_Border,
+		Gui_Active_Border,
+		Gui_Active_Border,
+		Gui_Active_Border,
+	}
 
 	r = new(Gui_Component, allocator)
 	r.instance = Gui_Dialog {
 		base = r,
 	}
 	r.layout = layout
+	fmt.println(r.layout)
 	return
 }
 
 gui_dialog_draw :: proc(instance: ^Gui_Dialog, rect: rl.Rectangle) {
+	gui_draw_border(instance.base, rect)
+
 	rl.DrawRectangleRec(rect, Color_Background)
 }
 

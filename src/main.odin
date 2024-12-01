@@ -89,13 +89,18 @@ main :: proc() {
 
 		append(&toolbar.children, open_file)
 		append(&app_state.gui.children, toolbar)
+
+		dialog := gui_dialog_make(allocator = arena_allocator)
+		dialog.layout.width = 400
+		dialog.layout.height = 300
+		append(&app_state.gui.children, dialog)
 	}
 
 	// model := gltf_rl.load_model(path, arena_allocator)
 
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
-		rl.ClearBackground(rl.BLUE)
+		rl.ClearBackground(Color_Background)
 
 		draw_preview(&app_state.preview)
 		gui_draw(app_state.gui, arena_allocator)
