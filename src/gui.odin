@@ -10,6 +10,7 @@ import rl "vendor:raylib"
 
 Color_Background :: rl.Color{26, 27, 38, 255}
 Color_Background_Lighter :: rl.Color{30, 31, 41, 255}
+Color_Background_Active :: rl.Color{40, 52, 87, 255}
 Color_Foreground :: rl.Color{192, 202, 245, 255}
 Color_Border_Active :: rl.Color{122, 162, 247, 255}
 Color_Border_Inactive :: rl.Color{41, 46, 66, 255}
@@ -36,13 +37,7 @@ Gui_Border :: struct {
 	width:          f32,
 }
 
-Gui_Active_Border :: Gui_Border {
-	color_active   = Color_Border_Active,
-	color_inactive = Color_Border_Inactive,
-	width          = 3,
-}
-
-Gui_Inactive_Border :: Gui_Border {
+Gui_Border_Default :: Gui_Border {
 	color_active   = Color_Border_Active,
 	color_inactive = Color_Border_Inactive,
 	width          = 3,
@@ -65,10 +60,17 @@ Gui_Component_Layout :: struct {
 	border:  [4]Gui_Border,
 }
 
-
 //------------------------------------------------------------------------------
 // Root Gui
 //------------------------------------------------------------------------------
+
+Global_State :: struct {
+	mouse_cursor: rl.MouseCursor,
+}
+
+global_state := Global_State {
+	mouse_cursor = .ARROW,
+}
 
 Gui_State :: struct {
 	children: [dynamic]^Gui_Component,
@@ -91,6 +93,8 @@ gui_draw :: proc(state: ^Gui_State, allocator := context.allocator) {
 	w := rl.GetRenderWidth()
 	h := rl.GetRenderHeight()
 
+	global_state.mouse_cursor = .ARROW
+
 	for &child in state.children {
 		child_rect := gui_calculate_layout(
 			child,
@@ -105,6 +109,8 @@ gui_draw :: proc(state: ^Gui_State, allocator := context.allocator) {
 			rl.Rectangle{x = 0, y = 0, width = f32(w), height = f32(h)},
 		)
 	}
+
+	rl.SetMouseCursor(global_state.mouse_cursor)
 	/*
 	if rl.GuiButton(rl.Rectangle{10, 10, 30, 30}, "#5#") {
 		cwd := os.get_current_directory(context.temp_allocator)
@@ -135,7 +141,7 @@ gui_calculate_layout :: proc(
 		x      = border[3].width + padding[3],
 		y      = border[0].width + padding[0],
 		width  = rect.width - border[1].width - border[3].width - padding[1] - padding[3],
-		height = rect.height - border[0].width - border[0].width - padding[0] - padding[2],
+		height = rect.height - border[0].width - border[2].width - padding[0] - padding[2],
 	}
 
 	switch layout.flow {
@@ -176,14 +182,11 @@ gui_calculate_layout :: proc(
 				},
 			)
 			child.runtime_rect = child_rect
-
 			content_width += child_rect.width
 
 			if height_contain {
 				occupied_rect.height =
 					math.max(occupied_rect.height, child_rect.height) +
-					border[0].width +
-					border[2].width +
 					padding[0] +
 					padding[2]
 			}
@@ -233,8 +236,6 @@ gui_calculate_layout :: proc(
 			if width_contain {
 				occupied_rect.width =
 					math.max(occupied_rect.width, child_rect.width) +
-					border[1].width +
-					border[3].width +
 					padding[1] +
 					padding[3]
 			}
@@ -249,30 +250,34 @@ gui_calculate_layout :: proc(
 
 	switch layout.h_align {
 	case .Start:
-		occupied_rect.x = rect.x
+		occupied_rect.x = rect.x + border[3].width
 	case .Center:
 		occupied_rect.x = (rect.width - occupied_rect.width) / 2
 	case .End:
-		occupied_rect.x = rect.width - occupied_rect.width
+		occupied_rect.x = rect.width - occupied_rect.width - border[1].width
 	}
 
 	switch layout.v_align {
 	case .Start:
-		occupied_rect.y = rect.y
+		occupied_rect.y = rect.y + border[0].width
 	case .Center:
 		occupied_rect.y = (rect.height - occupied_rect.height) / 2
 	case .End:
-		occupied_rect.y = rect.height - occupied_rect.height
+		occupied_rect.y = rect.height - occupied_rect.height - border[2].width
 	}
 
 	return
 }
 
-gui_draw_border :: proc(component: ^Gui_Component, rect: rl.Rectangle) {
+gui_draw_border :: proc(
+	component: ^Gui_Component,
+	rect: rl.Rectangle,
+	no_active := false,
+) {
 	border := component.layout.border
 	is_active: bool
 
-	{
+	if !no_active {
 		mouse_pos := rl.GetMousePosition()
 		is_active = rl.CheckCollisionPointRec(mouse_pos, rect)
 	}
@@ -316,6 +321,20 @@ gui_draw_border :: proc(component: ^Gui_Component, rect: rl.Rectangle) {
 			is_active ? border[3].color_active : border[3].color_inactive,
 		)
 	}
+}
+
+gui_is_hover :: proc(rect: rl.Rectangle) -> bool {
+	mouse_pos := rl.GetMousePosition()
+	return rl.CheckCollisionPointRec(mouse_pos, rect)
+}
+
+gui_is_click :: proc(rect: rl.Rectangle) -> bool {
+	if !rl.IsMouseButtonReleased(.LEFT) {
+		return false
+	}
+
+	mouse_pos := rl.GetMousePosition()
+	return rl.CheckCollisionPointRec(mouse_pos, rect)
 }
 
 //------------------------------------------------------------------------------
@@ -483,23 +502,25 @@ gui_toolbar_make :: proc(
 ) -> (
 	r: ^Gui_Component,
 ) {
+	r = new(Gui_Component, allocator)
+	r.instance = Gui_Toolbar {
+		base = r,
+	}
+
 	{
 		layout := layout
 		layout.flow = .Horizontal
 		layout.width = .Stretch
 		layout.height = .Contain
 		layout.padding = {5, 5, 5, 5}
+		layout.border[2] = Gui_Border_Default
+		r.layout = layout
 	}
-
-	r = new(Gui_Component, allocator)
-	r.instance = Gui_Toolbar {
-		base = r,
-	}
-	r.layout = layout
 	return
 }
 
 gui_toolbar_draw :: proc(instance: ^Gui_Toolbar, rect: rl.Rectangle) {
+	gui_draw_border(instance.base, rect, no_active = true)
 	rl.DrawRectangleRec(rect, Color_Background_Lighter)
 }
 
@@ -516,31 +537,49 @@ Gui_Icon_Button :: struct {
 noop_icon_button_click :: proc() {}
 gui_icon_button_make :: proc(
 	icon: cstring,
-	size: f32 = 30,
+	size: f32 = 33,
 	onclick := noop_icon_button_click,
 	layout := Gui_Component_Layout{},
 	allocator := context.allocator,
 ) -> (
 	r: ^Gui_Component,
 ) {
-	layout := layout
-	layout.width = size
-	layout.height = size
-
 	r = new(Gui_Component, allocator)
 	r.instance = Gui_Icon_Button {
 		base    = r,
 		icon    = icon,
 		onclick = onclick,
 	}
-	r.layout = layout
+
+	{
+		layout := layout
+		layout.width = size
+		layout.height = size
+		r.layout = layout
+	}
 	return
 }
 
 gui_icon_button_draw :: proc(instance: ^Gui_Icon_Button, rect: rl.Rectangle) {
-	if rl.GuiButton(rect, instance.icon) {
+	is_hover := gui_is_hover(rect)
+
+	if is_hover {
+		global_state.mouse_cursor = .POINTING_HAND
+
+		rl.DrawRectangleRec(rect, Color_Background_Active)
+	}
+
+	if gui_is_click(rect) {
 		instance.onclick()
 	}
+
+	rl.GuiDrawIcon(
+		rl.GuiIconName.ICON_FILE_OPEN,
+		i32(rect.x),
+		i32(rect.y),
+		2,
+		Color_Foreground,
+	)
 }
 
 //------------------------------------------------------------------------------
@@ -557,29 +596,29 @@ gui_dialog_make :: proc(
 ) -> (
 	r: ^Gui_Component,
 ) {
-	layout := layout
-	layout.flow = .Vertical
-	layout.h_align = .Center
-	layout.v_align = .Center
-	layout.border = {
-		Gui_Active_Border,
-		Gui_Active_Border,
-		Gui_Active_Border,
-		Gui_Active_Border,
-	}
-
 	r = new(Gui_Component, allocator)
 	r.instance = Gui_Dialog {
 		base = r,
 	}
-	r.layout = layout
-	fmt.println(r.layout)
+
+	{
+		layout := layout
+		layout.flow = .Vertical
+		layout.h_align = .Center
+		layout.v_align = .Center
+		layout.border = {
+			Gui_Border_Default,
+			Gui_Border_Default,
+			Gui_Border_Default,
+			Gui_Border_Default,
+		}
+		r.layout = layout
+	}
 	return
 }
 
 gui_dialog_draw :: proc(instance: ^Gui_Dialog, rect: rl.Rectangle) {
 	gui_draw_border(instance.base, rect)
-
 	rl.DrawRectangleRec(rect, Color_Background)
 }
 
