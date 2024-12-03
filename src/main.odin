@@ -91,8 +91,8 @@ main :: proc() {
 		append(&app_state.gui.children, toolbar)
 
 		dialog := gui_dialog_make("Open File", allocator = arena_allocator)
-		dialog.layout.width = 400
-		dialog.layout.height = 300
+		dialog.styles.width = 400
+		dialog.styles.height = 300
 		append(&app_state.gui.children, dialog)
 	}
 

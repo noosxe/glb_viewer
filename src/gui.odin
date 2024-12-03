@@ -43,7 +43,7 @@ Gui_Border_Default :: Gui_Border {
 	width          = 3,
 }
 
-Gui_Component_Layout :: struct {
+Gui_Styles :: struct {
 	width:   union {
 		f32,
 		Gui_Sizing,
@@ -132,9 +132,9 @@ gui_calculate_layout :: proc(
 ) -> (
 	occupied_rect: rl.Rectangle,
 ) {
-	layout := component.layout
-	padding := layout.padding
-	border := layout.border
+	styles := component.styles
+	padding := styles.padding
+	border := styles.border
 
 	// free area available for drawing
 	content_rect := rl.Rectangle {
@@ -144,10 +144,10 @@ gui_calculate_layout :: proc(
 		height = rect.height - border[0].width - border[2].width - padding[0] - padding[2],
 	}
 
-	switch layout.flow {
+	switch styles.flow {
 	case .Horizontal:
 		width_contain: bool
-		switch w in layout.width {
+		switch w in styles.width {
 		case Gui_Sizing:
 			if w == .Stretch {
 				occupied_rect.width = rect.width
@@ -159,7 +159,7 @@ gui_calculate_layout :: proc(
 		}
 
 		height_contain: bool
-		switch h in layout.height {
+		switch h in styles.height {
 		case Gui_Sizing:
 			if h == .Stretch {
 				occupied_rect.height = rect.height
@@ -197,7 +197,7 @@ gui_calculate_layout :: proc(
 		}
 	case .Vertical:
 		width_contain: bool
-		switch w in layout.width {
+		switch w in styles.width {
 		case Gui_Sizing:
 			if w == .Stretch {
 				occupied_rect.width = rect.width
@@ -209,7 +209,7 @@ gui_calculate_layout :: proc(
 		}
 
 		height_contain: bool
-		switch h in layout.height {
+		switch h in styles.height {
 		case Gui_Sizing:
 			if h == .Stretch {
 				occupied_rect.height = rect.height
@@ -248,7 +248,7 @@ gui_calculate_layout :: proc(
 		}
 	}
 
-	switch layout.h_align {
+	switch styles.h_align {
 	case .Start:
 		occupied_rect.x = rect.x + border[3].width
 	case .Center:
@@ -257,7 +257,7 @@ gui_calculate_layout :: proc(
 		occupied_rect.x = rect.width - occupied_rect.width - border[1].width
 	}
 
-	switch layout.v_align {
+	switch styles.v_align {
 	case .Start:
 		occupied_rect.y = rect.y + border[0].width
 	case .Center:
@@ -274,7 +274,7 @@ gui_draw_border :: proc(
 	rect: rl.Rectangle,
 	no_active := false,
 ) {
-	border := component.layout.border
+	border := component.styles.border
 	is_active: bool
 
 	if !no_active {
@@ -343,11 +343,16 @@ gui_is_click :: proc(rect: rl.Rectangle) -> bool {
 
 Gui_Component :: struct {
 	instance:     Gui_Component_Types,
-	layout:       Gui_Component_Layout,
+	styles:       Gui_Styles,
 	children:     [dynamic]^Gui_Component,
 
 	// Runtime
 	runtime_rect: rl.Rectangle,
+
+	// TODO: migrate to these instead of runtime_rect
+	content_rect: rl.Rectangle,
+	padding_rect: rl.Rectangle,
+	border_rect:  rl.Rectangle,
 }
 
 Gui_Component_Types :: union {
@@ -437,13 +442,13 @@ Gui_Vertical_Layout :: struct {
 }
 
 gui_vertical_layout_make :: proc(
-	layout := Gui_Component_Layout{},
+	styles := Gui_Styles{},
 	allocator := context.allocator,
 ) -> (
 	r: ^Gui_Component,
 ) {
-	layout := layout
-	layout.flow = .Vertical
+	styles := styles
+	styles.flow = .Vertical
 
 	r = new(Gui_Component, allocator)
 	r.instance = Gui_Vertical_Layout {
@@ -467,13 +472,13 @@ Gui_Horizontal_Layout :: struct {
 }
 
 gui_horizontal_layout_make :: proc(
-	layout := Gui_Component_Layout{},
+	styles := Gui_Styles{},
 	allocator := context.allocator,
 ) -> (
 	r: ^Gui_Component,
 ) {
-	layout := layout
-	layout.flow = .Horizontal
+	styles := styles
+	styles.flow = .Horizontal
 
 	r = new(Gui_Component, allocator)
 	r.instance = Gui_Horizontal_Layout {
@@ -497,7 +502,7 @@ Gui_Toolbar :: struct {
 }
 
 gui_toolbar_make :: proc(
-	layout := Gui_Component_Layout{},
+	styles := Gui_Styles{},
 	allocator := context.allocator,
 ) -> (
 	r: ^Gui_Component,
@@ -508,13 +513,13 @@ gui_toolbar_make :: proc(
 	}
 
 	{
-		layout := layout
-		layout.flow = .Horizontal
-		layout.width = .Stretch
-		layout.height = .Contain
-		layout.padding = {5, 5, 5, 5}
-		layout.border[2] = Gui_Border_Default
-		r.layout = layout
+		styles := styles
+		styles.flow = .Horizontal
+		styles.width = .Stretch
+		styles.height = .Contain
+		styles.padding = {5, 5, 5, 5}
+		styles.border[2] = Gui_Border_Default
+		r.styles = styles
 	}
 	return
 }
@@ -539,7 +544,7 @@ gui_icon_button_make :: proc(
 	icon: rl.GuiIconName,
 	size: f32 = 33,
 	onclick := noop_icon_button_click,
-	layout := Gui_Component_Layout{},
+	styles := Gui_Styles{},
 	allocator := context.allocator,
 ) -> (
 	r: ^Gui_Component,
@@ -552,10 +557,10 @@ gui_icon_button_make :: proc(
 	}
 
 	{
-		layout := layout
-		layout.width = size
-		layout.height = size
-		r.layout = layout
+		styles := styles
+		styles.width = size
+		styles.height = size
+		r.styles = styles
 	}
 	return
 }
@@ -593,7 +598,7 @@ Gui_Dialog :: struct {
 
 gui_dialog_make :: proc(
 	title: cstring,
-	layout := Gui_Component_Layout{},
+	styles := Gui_Styles{},
 	allocator := context.allocator,
 ) -> (
 	r: ^Gui_Component,
@@ -605,17 +610,17 @@ gui_dialog_make :: proc(
 	}
 
 	{
-		layout := layout
-		layout.flow = .Vertical
-		layout.h_align = .Center
-		layout.v_align = .Center
-		layout.border = {
+		styles := styles
+		styles.flow = .Vertical
+		styles.h_align = .Center
+		styles.v_align = .Center
+		styles.border = {
 			Gui_Border_Default,
 			Gui_Border_Default,
 			Gui_Border_Default,
 			Gui_Border_Default,
 		}
-		r.layout = layout
+		r.styles = styles
 	}
 	return
 }
