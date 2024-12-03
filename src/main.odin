@@ -82,7 +82,7 @@ main :: proc() {
 	{
 		toolbar := gui_toolbar_make(allocator = arena_allocator)
 		open_file := gui_icon_button_make(
-			"#5#",
+			.ICON_FILE_OPEN,
 			onclick = b_click,
 			allocator = arena_allocator,
 		)
@@ -90,7 +90,7 @@ main :: proc() {
 		append(&toolbar.children, open_file)
 		append(&app_state.gui.children, toolbar)
 
-		dialog := gui_dialog_make(allocator = arena_allocator)
+		dialog := gui_dialog_make("Open File", allocator = arena_allocator)
 		dialog.layout.width = 400
 		dialog.layout.height = 300
 		append(&app_state.gui.children, dialog)

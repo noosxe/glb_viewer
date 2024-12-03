@@ -530,13 +530,13 @@ gui_toolbar_draw :: proc(instance: ^Gui_Toolbar, rect: rl.Rectangle) {
 
 Gui_Icon_Button :: struct {
 	using base: ^Gui_Component,
-	icon:       cstring,
+	icon:       rl.GuiIconName,
 	onclick:    proc(),
 }
 
 noop_icon_button_click :: proc() {}
 gui_icon_button_make :: proc(
-	icon: cstring,
+	icon: rl.GuiIconName,
 	size: f32 = 33,
 	onclick := noop_icon_button_click,
 	layout := Gui_Component_Layout{},
@@ -574,7 +574,7 @@ gui_icon_button_draw :: proc(instance: ^Gui_Icon_Button, rect: rl.Rectangle) {
 	}
 
 	rl.GuiDrawIcon(
-		rl.GuiIconName.ICON_FILE_OPEN,
+		instance.icon,
 		i32(rect.x),
 		i32(rect.y),
 		2,
@@ -588,9 +588,11 @@ gui_icon_button_draw :: proc(instance: ^Gui_Icon_Button, rect: rl.Rectangle) {
 
 Gui_Dialog :: struct {
 	using base: ^Gui_Component,
+	title:      cstring,
 }
 
 gui_dialog_make :: proc(
+	title: cstring,
 	layout := Gui_Component_Layout{},
 	allocator := context.allocator,
 ) -> (
@@ -598,7 +600,8 @@ gui_dialog_make :: proc(
 ) {
 	r = new(Gui_Component, allocator)
 	r.instance = Gui_Dialog {
-		base = r,
+		base  = r,
+		title = title,
 	}
 
 	{
@@ -620,6 +623,17 @@ gui_dialog_make :: proc(
 gui_dialog_draw :: proc(instance: ^Gui_Dialog, rect: rl.Rectangle) {
 	gui_draw_border(instance.base, rect)
 	rl.DrawRectangleRec(rect, Color_Background)
+	rl.DrawRectangleRec(
+		rl.Rectangle{x = rect.x, y = rect.y, width = rect.width, height = 32},
+		Color_Background_Lighter,
+	)
+	rl.DrawText(
+		instance.title,
+		i32(rect.x + 5),
+		i32(rect.y + 5),
+		20,
+		Color_Foreground,
+	)
 }
 
 //------------------------------------------------------------------------------
